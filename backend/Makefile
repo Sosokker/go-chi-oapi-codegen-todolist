@@ -90,18 +90,3 @@ migrate-force:
 clean:
 	@echo ">> Cleaning build artifacts..."
 	rm -rf $(OUTPUT_DIR)
-
-docker-db:
-	@echo ">> Starting PostgreSQL container..."
-	@docker run --name todolist-db -e POSTGRES_USER=user \
-	           -e POSTGRES_PASSWORD=password \
-	           -e POSTGRES_DB=todolist \
-	           -p 5432:5432 -d postgres:15-alpine
-	@echo ">> Waiting for DB to be ready..."
-	@sleep 5
-	@echo ">> DB_URL=$(DB_URL)"
-
-docker-db-stop:
-	@echo ">> Stopping and removing PostgreSQL container..."
-	@docker stop todolist-db || true
-	@docker rm todolist-db || true
