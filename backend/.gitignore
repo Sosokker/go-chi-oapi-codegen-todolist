@@ -26,3 +26,5 @@ config.yaml # Often contains secrets, check your policy
 
 config.yaml
 backend/config.yaml
+gcs-credentials.json
+backend/gcs-credentials.json
