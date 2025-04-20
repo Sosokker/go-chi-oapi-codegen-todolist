@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Sosokker/todolist-backend/internal/api"
+	"github.com/Sosokker/todolist-backend/internal/cache"
 	"github.com/Sosokker/todolist-backend/internal/config"
 	"github.com/Sosokker/todolist-backend/internal/repository"
 	"github.com/Sosokker/todolist-backend/internal/service"
@@ -53,7 +54,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	repoRegistry := repository.NewRepositoryRegistry(pool)
+	// --- Cache Setup ---
+	appCache := cache.NewMemoryCache(cfg.Cache, logger)
+
+	repoRegistry := repository.NewRepositoryRegistry(pool, appCache, logger)
 
 	var storageService service.FileStorageService
 	storageService, err = service.NewGCStorageService(cfg.Storage.GCS, logger)

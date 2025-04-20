@@ -2,8 +2,10 @@ package repository
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
+	"github.com/Sosokker/todolist-backend/internal/cache"
 	"github.com/Sosokker/todolist-backend/internal/domain"
 	db "github.com/Sosokker/todolist-backend/internal/repository/sqlc/generated"
 	"github.com/google/uuid"
@@ -82,14 +84,22 @@ type RepositoryRegistry struct {
 	Pool *pgxpool.Pool
 }
 
-// NewRepositoryRegistry creates a new registry
-func NewRepositoryRegistry(pool *pgxpool.Pool) *RepositoryRegistry {
+// NewRepositoryRegistry creates a new registry, now with caching decorators
+func NewRepositoryRegistry(pool *pgxpool.Pool, cache cache.Cache, logger *slog.Logger) *RepositoryRegistry {
 	queries := db.New(pool)
+
+	pgxUserRepo := NewPgxUserRepository(queries)
+	pgxTagRepo := NewPgxTagRepository(queries)
+	pgxTodoRepo := NewPgxTodoRepository(queries, pool)
+	pgxSubtaskRepo := NewPgxSubtaskRepository(queries)
+
+	cachingTagRepo := NewCachingTagRepository(pgxTagRepo, cache, logger)
+
 	return &RepositoryRegistry{
-		UserRepo:    NewPgxUserRepository(queries),
-		TagRepo:     NewPgxTagRepository(queries),
-		TodoRepo:    NewPgxTodoRepository(queries, pool),
-		SubtaskRepo: NewPgxSubtaskRepository(queries),
+		UserRepo:    pgxUserRepo,    // Not cached yet in this example
+		TagRepo:     cachingTagRepo, // Use the caching decorator
+		TodoRepo:    pgxTodoRepo,    // Not cached yet in this example
+		SubtaskRepo: pgxSubtaskRepo, // Not cached yet in this example
 		Queries:     queries,
 		Pool:        pool,
 	}

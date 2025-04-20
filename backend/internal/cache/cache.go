@@ -18,19 +18,30 @@ type Cache interface {
 
 // memoryCache is an in-memory implementation of the Cache interface
 type memoryCache struct {
-	client *gocache.Cache
-	logger *slog.Logger
+	client            *gocache.Cache
+	logger            *slog.Logger
+	defaultExpiration time.Duration
 }
 
 // NewMemoryCache creates a new in-memory cache
 func NewMemoryCache(cfg config.CacheConfig, logger *slog.Logger) Cache {
-	c := gocache.New(cfg.DefaultExpiration, cfg.CleanupInterval)
+	defaultExp := cfg.DefaultExpiration
+	if defaultExp <= 0 {
+		defaultExp = 5 * time.Minute
+	}
+	cleanupInterval := cfg.CleanupInterval
+	if cleanupInterval <= 0 {
+		cleanupInterval = 10 * time.Minute
+	}
+
+	c := gocache.New(defaultExp, cleanupInterval)
 	logger.Info("In-memory cache initialized",
-		"defaultExpiration", cfg.DefaultExpiration,
-		"cleanupInterval", cfg.CleanupInterval)
+		"defaultExpiration", defaultExp,
+		"cleanupInterval", cleanupInterval)
 	return &memoryCache{
-		client: c,
-		logger: logger,
+		client:            c,
+		logger:            logger.With("component", "memoryCache"),
+		defaultExpiration: defaultExp,
 	}
 }
 
@@ -45,8 +56,12 @@ func (m *memoryCache) Get(ctx context.Context, key string) (interface{}, bool) {
 }
 
 func (m *memoryCache) Set(ctx context.Context, key string, value interface{}, duration time.Duration) {
-	m.logger.DebugContext(ctx, "Setting cache", "key", key, "duration", duration)
-	m.client.Set(key, value, duration) // duration=0 means use default, -1 means never expire (DefaultExpiration)
+	exp := duration
+	if exp <= 0 {
+		exp = m.defaultExpiration
+	}
+	m.logger.DebugContext(ctx, "Setting cache", "key", key, "duration", exp)
+	m.client.Set(key, value, exp)
 }
 
 func (m *memoryCache) Delete(ctx context.Context, key string) {
