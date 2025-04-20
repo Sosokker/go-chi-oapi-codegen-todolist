@@ -25,3 +25,4 @@ config.yaml # Often contains secrets, check your policy
 /tmp
 
 config.yaml
+backend/config.yaml
