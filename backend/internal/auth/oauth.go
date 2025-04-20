@@ -14,14 +14,11 @@ import (
 
 // GoogleUserInfo holds user details fetched from Google.
 type GoogleUserInfo struct {
-	ID            string `json:"id"`             // The unique Google ID
-	Email         string `json:"email"`          // The user's email address
-	VerifiedEmail bool   `json:"verified_email"` // Whether Google has verified the email
-	Name          string `json:"name"`           // User's full name
-	GivenName     string `json:"given_name"`     // First name
-	FamilyName    string `json:"family_name"`    // Last name
-	Picture       string `json:"picture"`        // URL to profile picture
-	Locale        string `json:"locale"`         // User's locale (e.g., "en")
+	ID            string `json:"sub"`
+	Email         string `json:"email"`
+	VerifiedEmail bool   `json:"email_verified"`
+	Name          string `json:"name"`
+	Picture       string `json:"picture"`
 }
 
 // OAuthProvider defines the interface for OAuth operations.

@@ -390,7 +390,7 @@ func (h *ApiHandler) HandleGoogleCallback(w http.ResponseWriter, r *http.Request
 		SameSite: parseSameSite(h.cfg.JWT.CookieSameSite),
 	})
 
-	redirectURL := "/dashboard"
+	redirectURL := fmt.Sprintf("%s/oauth/callback#access_token=%s", h.cfg.Frontend.Url, url.QueryEscape(token))
 	h.logger.InfoContext(ctx, "Google OAuth login successful", "userId", user.ID, "email", user.Email, "redirectingTo", redirectURL)
 	http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
 }

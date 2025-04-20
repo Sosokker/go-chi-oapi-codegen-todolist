@@ -218,15 +218,17 @@ export default function SignupPage() {
                 Or register with
               </span>
             </div>
-
             <div className="grid grid-cols-1 gap-4">
               <Button
                 type="button"
                 variant="outline"
                 className="w-full border-gray-300 text-gray-900 hover:bg-gray-100"
-                onClick={() =>
-                  toast.info("Google signup would be implemented here")
-                }
+                onClick={() => {
+                  const apiBaseUrl =
+                    process.env.NEXT_PUBLIC_API_BASE_URL ||
+                    "http://127.0.0.1:8080/api/v1";
+                  window.location.href = `${apiBaseUrl}/auth/google/login`;
+                }}
               >
                 <Icons.google className="mr-2 h-4 w-4" />
                 Google

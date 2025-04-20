@@ -16,6 +16,7 @@ type Config struct {
 	OAuth    OAuthConfig
 	Cache    CacheConfig
 	Storage  StorageConfig
+	Frontend FrontendConfig
 }
 
 type ServerConfig struct {
@@ -37,9 +38,9 @@ type LocalStorageConfig struct {
 }
 
 type GCSStorageConfig struct {
-	BucketName       string `mapstructure:"bucketName"`
-	CredentialsFile  string `mapstructure:"credentialsFile"`
-	BaseDir          string `mapstructure:"baseDir"`
+	BucketName      string `mapstructure:"bucketName"`
+	CredentialsFile string `mapstructure:"credentialsFile"`
+	BaseDir         string `mapstructure:"baseDir"`
 }
 
 type DatabaseConfig struct {
@@ -79,6 +80,10 @@ type CacheConfig struct {
 	CleanupInterval   time.Duration `mapstructure:"cleanupInterval"`
 }
 
+type FrontendConfig struct {
+	Url string `mapstructure:"url"`
+}
+
 func LoadConfig(path string) (*Config, error) {
 	viper.SetConfigName("config") // name of config file (without extension)
 	viper.SetConfigType("yaml")   // or viper.SetConfigType("YAML")
@@ -103,6 +108,7 @@ func LoadConfig(path string) (*Config, error) {
 	viper.SetDefault("cache.cleanupInterval", 10*time.Minute)
 	viper.SetDefault("storage.type", "local") // Default to local storage
 	viper.SetDefault("storage.local.path", "./uploads")
+	viper.SetDefault("frontend.url", "http://localhost:3000")
 
 	err := viper.ReadInConfig()
 	if err != nil {

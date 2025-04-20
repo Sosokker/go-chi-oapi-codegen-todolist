@@ -28,7 +28,6 @@ export default function TodosLayout({
   }
 
   if (!isAuthenticated) {
-    router.push("/login");
     return null;
   }
 
