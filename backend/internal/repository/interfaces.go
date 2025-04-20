@@ -40,7 +40,7 @@ type ListTodosParams struct {
 	TagID          *uuid.UUID
 	DeadlineBefore *time.Time
 	DeadlineAfter  *time.Time
-	ListParams     // Embed pagination
+	ListParams
 }
 
 type TodoRepository interface {
@@ -54,10 +54,8 @@ type TodoRepository interface {
 	RemoveTag(ctx context.Context, todoID, tagID uuid.UUID) error
 	SetTags(ctx context.Context, todoID uuid.UUID, tagIDs []uuid.UUID) error
 	GetTags(ctx context.Context, todoID uuid.UUID) ([]domain.Tag, error)
-	// Attachment associations (using simple string array)
-	AddAttachment(ctx context.Context, todoID, userID uuid.UUID, attachmentID string) error
-	RemoveAttachment(ctx context.Context, todoID, userID uuid.UUID, attachmentID string) error
-	SetAttachments(ctx context.Context, todoID, userID uuid.UUID, attachmentIDs []string) error
+	// Attachment URL management
+	UpdateAttachmentURL(ctx context.Context, todoID, userID uuid.UUID, attachmentURL *string) error
 }
 
 type SubtaskRepository interface {

@@ -73,18 +73,14 @@ test:
 
 migrate-up:
 	@echo ">> Applying migrations..."
-	@if [ -z "$(DB_URL)" ]; then echo "Error: DB_URL is not set. Run 'make docker-db' or set it manually."; exit 1; fi
 	$(MIGRATE) -database "$(DB_URL)" -path $(MIGRATIONS_PATH) up
 
 migrate-down:
 	@echo ">> Rolling back last migration..."
-	@if [ -z "$(DB_URL)" ]; then echo "Error: DB_URL is not set. Run 'make docker-db' or set it manually."; exit 1; fi
 	$(MIGRATE) -database "$(DB_URL)" -path $(MIGRATIONS_PATH) down 1
 
 migrate-force:
 	@echo ">> Forcing migration version $(VERSION)..."
-	@if [ -z "$(DB_URL)" ]; then echo "Error: DB_URL is not set. Run 'make docker-db' or set it manually."; exit 1; fi
-	@if [ -z "$(VERSION)" ]; then echo "Error: VERSION is not set. Usage: make migrate-force VERSION=<version_number>"; exit 1; fi
 	$(MIGRATE) -database "$(DB_URL)" -path $(MIGRATIONS_PATH) force $(VERSION)
 
 clean:

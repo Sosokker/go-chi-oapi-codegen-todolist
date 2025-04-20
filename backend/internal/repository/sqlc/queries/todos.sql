@@ -1,6 +1,6 @@
 -- name: CreateTodo :one
-INSERT INTO todos (user_id, title, description, status, deadline)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO todos (user_id, title, description, status, deadline, attachment_url)
+VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING *;
 
 -- name: GetTodoByID :one
@@ -11,13 +11,13 @@ WHERE id = $1 AND user_id = $2 LIMIT 1;
 SELECT t.* FROM todos t
 LEFT JOIN todo_tags tt ON t.id = tt.todo_id
 WHERE
-  t.user_id = sqlc.arg('user_id') -- Use sqlc.arg for required params
+  t.user_id = sqlc.arg('user_id')
   AND (sqlc.narg('status_filter')::todo_status IS NULL OR t.status = sqlc.narg('status_filter'))
   AND (sqlc.narg('tag_id_filter')::uuid IS NULL OR tt.tag_id = sqlc.narg('tag_id_filter'))
   AND (sqlc.narg('deadline_before_filter')::timestamptz IS NULL OR t.deadline < sqlc.narg('deadline_before_filter'))
   AND (sqlc.narg('deadline_after_filter')::timestamptz IS NULL OR t.deadline > sqlc.narg('deadline_after_filter'))
-GROUP BY t.id -- Still needed due to LEFT JOIN potentially multiplying rows if a todo has multiple tags
-ORDER BY t.created_at DESC -- Or your desired order
+GROUP BY t.id
+ORDER BY t.created_at DESC
 LIMIT sqlc.arg('limit')
 OFFSET sqlc.arg('offset');
 
@@ -25,10 +25,10 @@ OFFSET sqlc.arg('offset');
 UPDATE todos
 SET
   title = COALESCE(sqlc.narg(title), title),
-  description = sqlc.narg(description), -- Allow setting description to NULL
+  description = sqlc.narg(description),
   status = COALESCE(sqlc.narg(status), status),
-  deadline = sqlc.narg(deadline),       -- Allow setting deadline to NULL
-  attachments = COALESCE(sqlc.narg(attachments), attachments)
+  deadline = sqlc.narg(deadline),
+  attachment_url = COALESCE(sqlc.narg(attachment_url), attachment_url) -- Update attachment_url
 WHERE id = $1 AND user_id = $2
 RETURNING *;
 
@@ -36,12 +36,8 @@ RETURNING *;
 DELETE FROM todos
 WHERE id = $1 AND user_id = $2;
 
--- name: AddAttachmentToTodo :exec
+-- name: UpdateTodoAttachmentURL :exec
+-- Sets or clears the attachment URL for a specific todo
 UPDATE todos
-SET attachments = array_append(attachments, $1)
-WHERE id = $2 AND user_id = $3;
-
--- name: RemoveAttachmentFromTodo :exec
-UPDATE todos
-SET attachments = array_remove(attachments, $1)
+SET attachment_url = $1 -- $1 will be the URL (TEXT) or NULL
 WHERE id = $2 AND user_id = $3;

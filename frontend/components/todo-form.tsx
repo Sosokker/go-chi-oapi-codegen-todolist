@@ -1,9 +1,10 @@
 "use client";
 
 import type React from "react";
-import Image from "next/image";
-
 import { useState, useEffect } from "react";
+import { toast } from "sonner";
+import { useAuth } from "@/hooks/use-auth";
+import { uploadAttachment, deleteAttachment } from "@/services/api-attachments";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,25 +17,33 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { MultiSelect } from "@/components/multi-select";
-import { Icons } from "@/components/icons";
 import type { Todo, Tag } from "@/services/api-types";
+import { Progress } from "./ui/progress";
 
 interface TodoFormProps {
   todo?: Todo;
   tags: Tag[];
-  onSubmit: (todo: Partial<Todo>) => void;
+  onSubmit: (todo: Partial<Todo>) => Promise<void>;
+  onAttachmentsChanged?: (attachments: string[]) => void; // Now just an array of one or zero
 }
 
-export function TodoForm({ todo, tags, onSubmit }: TodoFormProps) {
+export function TodoForm({
+  todo,
+  tags,
+  onSubmit,
+  onAttachmentsChanged,
+}: TodoFormProps) {
+  const { token } = useAuth();
   const [formData, setFormData] = useState<Partial<Todo>>({
     title: "",
     description: "",
     status: "pending",
     deadline: undefined,
     tagIds: [],
-    image: null,
+    attachmentUrl: null,
   });
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   useEffect(() => {
     if (todo) {
@@ -44,12 +53,17 @@ export function TodoForm({ todo, tags, onSubmit }: TodoFormProps) {
         status: todo.status,
         deadline: todo.deadline,
         tagIds: todo.tagIds || [],
-        image: todo.image || null,
+        attachmentUrl: todo.attachmentUrl || null,
       });
-
-      if (todo.image) {
-        setImagePreview(todo.image);
-      }
+    } else {
+      setFormData({
+        title: "",
+        description: "",
+        status: "pending",
+        deadline: undefined,
+        tagIds: [],
+        attachmentUrl: null,
+      });
     }
   }, [todo]);
 
@@ -68,29 +82,85 @@ export function TodoForm({ todo, tags, onSubmit }: TodoFormProps) {
     setFormData((prev) => ({ ...prev, tagIds: selected }));
   };
 
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Upload new attachment
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Only one attachment is supported, so uploading a new one replaces the old
+
+    if (!todo || !token) {
+      toast.error("Cannot attach files until the todo is saved.");
+      return;
+    }
     const file = e.target.files?.[0];
     if (!file) return;
+    // Only allow images
+    if (!file.type.startsWith("image/")) {
+      toast.error("Only image files are allowed.");
+      return;
+    }
 
-    // In a real app, we would upload the file to a server and get a URL back
-    // For now, we'll create a local object URL
-    const imageUrl = URL.createObjectURL(file);
-    setImagePreview(imageUrl);
-    setFormData((prev) => ({ ...prev, image: imageUrl }));
+    setIsUploading(true);
+    setUploadProgress(0);
+
+    // Simulate progress for demo – replace if backend supports it
+    const progressInterval = setInterval(() => {
+      setUploadProgress((p) => Math.min(p + 10, 90));
+    }, 200);
+
+    try {
+      const response = await uploadAttachment(todo.id, file, token);
+      clearInterval(progressInterval);
+      setUploadProgress(100);
+      toast.success(`Uploaded: "${response.fileName}"`);
+
+      setFormData((f) => ({ ...f, attachmentUrl: response.fileUrl }));
+      onAttachmentsChanged?.([response.fileUrl]);
+
+      setTimeout(() => {
+        setIsUploading(false);
+        setUploadProgress(0);
+      }, 500);
+    } catch (err) {
+      clearInterval(progressInterval);
+      setIsUploading(false);
+      setUploadProgress(0);
+      console.error(err);
+      toast.error(
+        `Upload failed: ${err instanceof Error ? err.message : "Unknown error"}`
+      );
+    } finally {
+      e.target.value = "";
+    }
   };
 
-  const handleRemoveImage = () => {
-    setImagePreview(null);
-    setFormData((prev) => ({ ...prev, image: null }));
+  // Remove an existing attachment
+  const handleRemoveAttachment = async (attachmentId: string) => {
+    // Only one attachment is supported, so attachmentId is ignored
+
+    if (!todo || !token) {
+      toast.error("Cannot remove attachments right now.");
+      return;
+    }
+    try {
+      await deleteAttachment(todo.id, attachmentId, token);
+      // Only one attachment is supported now, so just clear the attachmentUrl
+      setFormData((f) => ({ ...f, attachmentUrl: null }));
+      onAttachmentsChanged?.([]);
+      toast.success("Attachment removed.");
+    } catch (err) {
+      console.error(err);
+      toast.error(
+        `Delete failed: ${err instanceof Error ? err.message : "Unknown error"}`
+      );
+    }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit(formData);
+    await onSubmit(formData);
   };
-
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {/* Title, Description, Status, Deadline, Tags... */}
       <div className="space-y-2">
         <Label htmlFor="title">Title</Label>
         <Input
@@ -150,46 +220,50 @@ export function TodoForm({ todo, tags, onSubmit }: TodoFormProps) {
           placeholder="Select tags"
         />
       </div>
-      <div className="space-y-2">
-        <Label htmlFor="image">Image (optional)</Label>
-        <div className="flex items-center gap-2">
+
+      {/* Attachment Section - Only shown when editing an existing todo */}
+      {todo && (
+        <div className="space-y-2">
+          <Label htmlFor="attachments">Attachments</Label>
           <Input
-            id="image"
-            name="image"
+            id="file"
             type="file"
             accept="image/*"
-            onChange={handleImageChange}
-            className="flex-1"
+            multiple={false}
+            onChange={handleFileChange}
+            disabled={isUploading}
           />
-          {imagePreview && (
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              onClick={handleRemoveImage}
-            >
-              <Icons.trash className="h-4 w-4" />
-              <span className="sr-only">Remove image</span>
-            </Button>
+          {isUploading && (
+            <Progress value={uploadProgress} className="w-full h-2" />
           )}
         </div>
-        {imagePreview && (
-          <div className="mt-2 relative w-full h-32 rounded-md overflow-hidden border">
-            <Image
-              src={imagePreview || "/placeholder.svg"}
-              alt="Preview"
-              width={400}
-              height={128}
-              className="w-full h-full object-cover rounded-md"
-            />
-          </div>
-        )}
-      </div>
-      <Button
-        type="submit"
-        className="w-full bg-[#FF5A5F] hover:bg-[#FF5A5F]/90"
-      >
-        {todo ? "Update" : "Create"} Todo
+      )}
+      {formData.attachmentUrl && (
+        <div className="mt-2">
+          <ul>
+            <li className="flex items-center gap-2">
+              <a
+                href={formData.attachmentUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 underline"
+              >
+                View Attachment
+              </a>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => handleRemoveAttachment("")}
+                disabled={isUploading}
+              >
+                Remove
+              </Button>
+            </li>
+          </ul>
+        </div>
+      )}
+      <Button type="submit" className="w-full h-10" disabled={isUploading}>
+        {isUploading ? "Uploading..." : todo ? "Update Todo" : "Create Todo"}
       </Button>
     </form>
   );

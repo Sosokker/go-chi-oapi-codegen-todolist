@@ -10,7 +10,7 @@ export function useTags() {
 
   return useQuery({
     queryKey: ["tags"],
-    queryFn: () => listUserTags(token),
+    queryFn: () => listUserTags(token || undefined),
     enabled: !!token,
   })
 }

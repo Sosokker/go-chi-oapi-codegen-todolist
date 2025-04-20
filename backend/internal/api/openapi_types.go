@@ -42,6 +42,24 @@ const (
 	ListTodosParamsStatusPending    ListTodosParamsStatus = "pending"
 )
 
+// AttachmentInfo Metadata about an uploaded attachment.
+type AttachmentInfo struct {
+	// ContentType MIME type of the uploaded file.
+	ContentType string `json:"contentType"`
+
+	// FileId Unique storage identifier/path for the file (used for deletion).
+	FileId string `json:"fileId"`
+
+	// FileName Original name of the uploaded file.
+	FileName string `json:"fileName"`
+
+	// FileUrl URL to access the uploaded file (e.g., a signed GCS URL).
+	FileUrl string `json:"fileUrl"`
+
+	// Size Size of the uploaded file in bytes.
+	Size int64 `json:"size"`
+}
+
 // CreateSubtaskRequest Data required to create a new Subtask.
 type CreateSubtaskRequest struct {
 	Description string `json:"description"`
@@ -82,23 +100,8 @@ type Error struct {
 	Message string `json:"message"`
 }
 
-// FileUploadResponse Response after successfully uploading a file.
-type FileUploadResponse struct {
-	// ContentType MIME type of the uploaded file.
-	ContentType string `json:"contentType"`
-
-	// FileId Unique identifier for the uploaded file.
-	FileId string `json:"fileId"`
-
-	// FileName Original name of the uploaded file.
-	FileName string `json:"fileName"`
-
-	// FileUrl URL to access the uploaded file.
-	FileUrl string `json:"fileUrl"`
-
-	// Size Size of the uploaded file in bytes.
-	Size int64 `json:"size"`
-}
+// FileUploadResponse Metadata about an uploaded attachment.
+type FileUploadResponse = AttachmentInfo
 
 // LoginRequest Data required for logging in via email/password.
 type LoginRequest struct {
@@ -157,35 +160,21 @@ type Tag struct {
 
 // Todo Represents a Todo item.
 type Todo struct {
-	// Attachments List of identifiers (e.g., URLs or IDs) for attached files/images. Managed via upload/update endpoints.
-	Attachments []string   `json:"attachments"`
-	CreatedAt   *time.Time `json:"createdAt,omitempty"`
-
-	// Deadline Optional deadline for the Todo item.
-	Deadline *time.Time `json:"deadline"`
-
-	// Description Optional detailed description of the Todo.
-	Description *string             `json:"description"`
-	Id          *openapi_types.UUID `json:"id,omitempty"`
-
-	// Status Current status of the Todo item.
-	Status TodoStatus `json:"status"`
-
-	// Subtasks List of subtasks associated with this Todo. Usually fetched/managed via subtask endpoints.
-	Subtasks *[]Subtask `json:"subtasks,omitempty"`
-
-	// TagIds List of IDs of Tags associated with this Todo.
-	TagIds []openapi_types.UUID `json:"tagIds"`
-
-	// Title The main title or task of the Todo.
-	Title     string     `json:"title"`
-	UpdatedAt *time.Time `json:"updatedAt,omitempty"`
-
-	// UserId The ID of the user who owns this Todo.
-	UserId *openapi_types.UUID `json:"userId,omitempty"`
+	// AttachmentUrl Publicly accessible URL of the attached image, if any.
+	AttachmentUrl *string              `json:"attachmentUrl"`
+	CreatedAt     *time.Time           `json:"createdAt,omitempty"`
+	Deadline      *time.Time           `json:"deadline"`
+	Description   *string              `json:"description"`
+	Id            *openapi_types.UUID  `json:"id,omitempty"`
+	Status        TodoStatus           `json:"status"`
+	Subtasks      *[]Subtask           `json:"subtasks,omitempty"`
+	TagIds        []openapi_types.UUID `json:"tagIds"`
+	Title         string               `json:"title"`
+	UpdatedAt     *time.Time           `json:"updatedAt,omitempty"`
+	UserId        *openapi_types.UUID  `json:"userId,omitempty"`
 }
 
-// TodoStatus Current status of the Todo item.
+// TodoStatus defines model for Todo.Status.
 type TodoStatus string
 
 // UpdateSubtaskRequest Data for updating an existing Subtask. Both fields are optional.
@@ -206,17 +195,13 @@ type UpdateTagRequest struct {
 	Name *string `json:"name,omitempty"`
 }
 
-// UpdateTodoRequest Data for updating an existing Todo item. All fields are optional for partial updates.
+// UpdateTodoRequest Data for updating an existing Todo item. Attachment is managed via dedicated endpoints.
 type UpdateTodoRequest struct {
-	// Attachments Replace the existing list of attachment identifiers. Use upload/delete endpoints for managing actual files.
-	Attachments *[]string                `json:"attachments,omitempty"`
 	Deadline    *time.Time               `json:"deadline"`
 	Description *string                  `json:"description"`
 	Status      *UpdateTodoRequestStatus `json:"status,omitempty"`
-
-	// TagIds Replace the existing list of associated Tag IDs. IDs must belong to the user.
-	TagIds *[]openapi_types.UUID `json:"tagIds,omitempty"`
-	Title  *string               `json:"title,omitempty"`
+	TagIds      *[]openapi_types.UUID    `json:"tagIds,omitempty"`
+	Title       *string                  `json:"title,omitempty"`
 }
 
 // UpdateTodoRequestStatus defines model for UpdateTodoRequest.Status.
@@ -259,30 +244,17 @@ type Unauthorized = Error
 
 // ListTodosParams defines parameters for ListTodos.
 type ListTodosParams struct {
-	// Status Filter Todos by status.
 	Status *ListTodosParamsStatus `form:"status,omitempty" json:"status,omitempty"`
-
-	// TagId Filter Todos by a specific Tag ID.
-	TagId *openapi_types.UUID `form:"tagId,omitempty" json:"tagId,omitempty"`
-
-	// DeadlineBefore Filter Todos with deadline before this date/time.
-	DeadlineBefore *time.Time `form:"deadline_before,omitempty" json:"deadline_before,omitempty"`
-
-	// DeadlineAfter Filter Todos with deadline after this date/time.
-	DeadlineAfter *time.Time `form:"deadline_after,omitempty" json:"deadline_after,omitempty"`
-
-	// Limit Maximum number of Todos to return.
-	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
-
-	// Offset Number of Todos to skip for pagination.
-	Offset *int `form:"offset,omitempty" json:"offset,omitempty"`
+	TagId  *openapi_types.UUID    `form:"tagId,omitempty" json:"tagId,omitempty"`
+	Limit  *int                   `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *int                   `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
 // ListTodosParamsStatus defines parameters for ListTodos.
 type ListTodosParamsStatus string
 
-// UploadTodoAttachmentMultipartBody defines parameters for UploadTodoAttachment.
-type UploadTodoAttachmentMultipartBody struct {
+// UploadOrReplaceTodoAttachmentMultipartBody defines parameters for UploadOrReplaceTodoAttachment.
+type UploadOrReplaceTodoAttachmentMultipartBody struct {
 	File openapi_types.File `json:"file"`
 }
 
@@ -304,8 +276,8 @@ type CreateTodoJSONRequestBody = CreateTodoRequest
 // UpdateTodoByIdJSONRequestBody defines body for UpdateTodoById for application/json ContentType.
 type UpdateTodoByIdJSONRequestBody = UpdateTodoRequest
 
-// UploadTodoAttachmentMultipartRequestBody defines body for UploadTodoAttachment for multipart/form-data ContentType.
-type UploadTodoAttachmentMultipartRequestBody UploadTodoAttachmentMultipartBody
+// UploadOrReplaceTodoAttachmentMultipartRequestBody defines body for UploadOrReplaceTodoAttachment for multipart/form-data ContentType.
+type UploadOrReplaceTodoAttachmentMultipartRequestBody UploadOrReplaceTodoAttachmentMultipartBody
 
 // CreateSubtaskForTodoJSONRequestBody defines body for CreateSubtaskForTodo for application/json ContentType.
 type CreateSubtaskForTodoJSONRequestBody = CreateSubtaskRequest

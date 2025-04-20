@@ -100,4 +100,5 @@ export const Icons = {
   loader: IconLoader,
   circle: IconCircle,
   moreVertical: IconDotsVertical,
+  file: IconFile,
 };

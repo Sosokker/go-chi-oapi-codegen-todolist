@@ -1,16 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { toast } from "sonner";
+
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import {
-  Card,
-  CardContent,
-  CardTitle,
-  CardDescription,
-  CardHeader,
-} from "@/components/ui/card";
+import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,6 +20,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
+
 import { TodoForm } from "@/components/todo-form";
 import { Icons } from "@/components/icons";
 import { cn } from "@/lib/utils";
@@ -35,8 +30,9 @@ import Image from "next/image";
 interface TodoCardProps {
   todo: Todo;
   tags: Tag[];
-  onUpdate: (todo: Partial<Todo>) => void;
+  onUpdate: (todo: Partial<Todo>) => Promise<void>;
   onDelete: () => void;
+  onAttachmentsChanged?: (attachments: string[]) => void;
   isDraggable?: boolean;
 }
 
@@ -45,6 +41,7 @@ export function TodoCard({
   tags,
   onUpdate,
   onDelete,
+  onAttachmentsChanged,
   isDraggable = false,
 }: TodoCardProps) {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -69,7 +66,7 @@ export function TodoCard({
     opacity: isDragging ? 0.5 : 1,
   };
 
-  // Style helpers
+  // --- Helper Functions ---
   const getStatusColor = (status: string) => {
     switch (status) {
       case "pending":
@@ -82,38 +79,42 @@ export function TodoCard({
         return "border-l-4 border-l-slate-400";
     }
   };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "pending":
-        return <Icons.clock className="h-5 w-5 text-amber-500" />;
-      case "in-progress":
-        return <Icons.loader className="h-5 w-5 text-sky-500" />;
-      case "completed":
-        return <Icons.checkSquare className="h-5 w-5 text-emerald-500" />;
-      default:
-        return <Icons.circle className="h-5 w-5 text-slate-400" />;
-    }
-  };
-
-  const todoTags = tags.filter((tag) => todo.tagIds.includes(tag.id));
-  const hasImage = !!todo.image;
-  const hasAttachments = todo.attachments && todo.attachments.length > 0;
-  const hasSubtasks = todo.subtasks && todo.subtasks.length > 0;
-  const completedSubtasks = todo.subtasks
-    ? todo.subtasks.filter((subtask) => subtask.completed).length
-    : 0;
-
-  const handleStatusToggle = () => {
-    const newStatus = todo.status === "completed" ? "pending" : "completed";
-    onUpdate({ status: newStatus });
-  };
-
+  // const getStatusIcon = (status: string) => {
+  //   switch (status) {
+  //     case "pending":
+  //       return <Icons.clock className="h-5 w-5 text-amber-500" />;
+  //     case "in-progress":
+  //       return <Icons.loader className="h-5 w-5 text-sky-500" />;
+  //     case "completed":
+  //       return <Icons.checkSquare className="h-5 w-5 text-emerald-500" />;
+  //     default:
+  //       return <Icons.circle className="h-5 w-5 text-slate-400" />;
+  //   }
+  // };
   const formatDate = (dateString?: string | null) => {
     if (!dateString) return "";
     const date = new Date(dateString);
     return date.toLocaleDateString();
   };
+
+  const todoTags = tags.filter((tag) => todo.tagIds?.includes(tag.id));
+  const hasAttachments = !!todo.attachmentUrl;
+  const hasSubtasks = todo.subtasks && todo.subtasks.length > 0;
+  const completedSubtasks =
+    todo.subtasks?.filter((s) => s.completed).length ?? 0;
+
+  // --- Event Handlers ---
+  const handleStatusToggle = () => {
+    const newStatus = todo.status === "completed" ? "pending" : "completed";
+    onUpdate({ status: newStatus });
+  };
+
+  // --- Rendering ---
+  const coverImage =
+    todo.attachmentUrl &&
+    todo.attachmentUrl.match(/\.(jpg|jpeg|png|gif|webp)$/i)
+      ? todo.attachmentUrl
+      : null;
 
   return (
     <>
@@ -121,136 +122,132 @@ export function TodoCard({
         ref={setNodeRef}
         style={style}
         className={cn(
-          "transition-colors",
+          "transition-shadow duration-150 ease-out",
           getStatusColor(todo.status),
-          "shadow-sm min-w-[220px] max-w-[420px]",
+          "shadow-sm hover:shadow-md min-w-[220px] max-w-[420px] bg-card",
           isDraggable ? "cursor-grab active:cursor-grabbing" : "",
-          isDragging ? "shadow-lg" : ""
+          isDragging
+            ? "shadow-lg ring-2 ring-primary ring-opacity-50 scale-105 z-10"
+            : ""
         )}
         {...(isDraggable ? { ...attributes, ...listeners } : {})}
+        onClick={() => !isDraggable && setIsViewDialogOpen(true)}
       >
-        <CardContent className="p-4 flex gap-4">
-          {/* Left icon, like notification card */}
-          <div className="flex-shrink-0 mt-1">{getStatusIcon(todo.status)}</div>
-          {/* Main content */}
-          <div className="flex-grow">
-            <CardHeader className="p-0">
-              <div className="flex items-center justify-between">
-                <CardTitle
-                  className={cn(
-                    "text-base",
-                    todo.status === "completed" &&
-                      "line-through text-muted-foreground"
-                  )}
-                >
-                  {todo.title}
-                </CardTitle>
-                {!isDraggable && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        aria-label="More actions"
-                      >
-                        <Icons.moreVertical className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem
-                        onClick={() => setIsViewDialogOpen(true)}
-                      >
-                        <Icons.eye className="h-4 w-4 mr-2" />
-                        View details
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => setIsEditDialogOpen(true)}
-                      >
-                        <Icons.edit className="h-4 w-4 mr-2" />
-                        Edit
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={onDelete}
-                        className="text-red-600"
-                      >
-                        <Icons.trash className="h-4 w-4 mr-2" />
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
-              </div>
-              {/* Actions and deadline on a new line */}
-              <div className="flex items-center gap-2 mt-1">
-                {todo.deadline && (
-                  <span className="text-xs text-muted-foreground flex items-center gap-1">
-                    <Icons.calendar className="h-3 w-3" />
-                    {formatDate(todo.deadline)}
-                  </span>
-                )}
-              </div>
-            </CardHeader>
-            <CardDescription
+        <CardContent className="p-3">
+          {/* Optional Cover Image */}
+          {coverImage && (
+            <div className="relative h-24 w-full mb-2 rounded overflow-hidden">
+              <Image
+                src={coverImage || "/placeholder.svg"}
+                alt="Todo Attachment"
+                fill
+                style={{ objectFit: "cover" }}
+                sizes="(max-width: 640px) 100vw, 300px"
+                className="bg-muted"
+                priority={false}
+              />
+            </div>
+          )}
+          {/* Title and Menu */}
+          <div className="flex items-start justify-between mb-1">
+            <CardTitle
               className={cn(
-                "mt-1",
+                "text-sm font-medium leading-snug pr-2",
                 todo.status === "completed" &&
-                  "line-through text-muted-foreground/70"
+                  "line-through text-muted-foreground"
               )}
             >
-              {todo.description}
-            </CardDescription>
-            {/* Tags and indicators */}
-            <div className="flex flex-wrap items-center gap-1.5 mt-2">
-              {todoTags.map((tag) => (
-                <Badge
-                  key={tag.id}
-                  variant="outline"
-                  className="px-1.5 py-0 h-4 text-[10px] font-normal border-0"
-                  style={{
-                    backgroundColor: `${tag.color}20` || "#FF5A5F20",
-                    color: tag.color || "#FF5A5F",
-                  }}
-                >
-                  {tag.name}
-                </Badge>
-              ))}
-              {hasSubtasks && (
-                <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground ml-2">
-                  <Icons.checkSquare className="h-3 w-3" />
-                  {completedSubtasks}/{todo.subtasks.length}
-                </span>
-              )}
-              {hasAttachments && (
-                <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground ml-2">
-                  <Icons.paperclip className="h-3 w-3" />
-                  {todo.attachments.length}
-                </span>
-              )}
-              {hasImage && (
-                <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground ml-2">
-                  <Icons.image className="h-3 w-3" />
-                </span>
-              )}
-            </div>
-            {/* Bottom row: created date and status toggle */}
-            <div className="flex justify-between items-center mt-3">
-              <span className="text-[10px] text-muted-foreground/70">
-                {todo.createdAt ? formatDate(todo.createdAt) : ""}
-              </span>
-              <Button
-                variant={todo.status === "completed" ? "ghost" : "outline"}
-                size="sm"
-                className="h-6 text-[10px] px-2 py-0 rounded-full"
-                onClick={handleStatusToggle}
+              {todo.title}
+            </CardTitle>
+            {!isDraggable && (
+              <DropdownMenu
+                onOpenChange={(open) => open && setIsViewDialogOpen(false)}
               >
-                {todo.status === "completed" ? (
-                  <Icons.x className="h-3 w-3" />
-                ) : (
-                  <Icons.check className="h-3 w-3" />
-                )}
-              </Button>
-            </div>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 flex-shrink-0 -mt-1 -mr-1"
+                  >
+                    <Icons.moreVertical className="h-3.5 w-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="end"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <DropdownMenuItem onClick={() => setIsViewDialogOpen(true)}>
+                    <Icons.eye className="h-3.5 w-3.5 mr-2" /> View
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setIsEditDialogOpen(true)}>
+                    <Icons.edit className="h-3.5 w-3.5 mr-2" /> Edit
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={onDelete} className="text-red-600">
+                    <Icons.trash className="h-3.5 w-3.5 mr-2" /> Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
+          {/* Description (optional, truncated) */}
+          {todo.description && (
+            <p className="text-xs text-muted-foreground mb-1.5 line-clamp-2">
+              {todo.description}
+            </p>
+          )}
+          {/* Badges and Indicators */}
+          <div className="flex flex-wrap items-center gap-1.5 text-[10px] mb-1.5">
+            {todoTags.map((tag) => (
+              <Badge
+                key={tag.id}
+                variant="outline"
+                className="px-1.5 py-0 h-4 text-[10px] font-normal border-0"
+                style={{
+                  backgroundColor: `${tag.color}20` || "#FF5A5F20",
+                  color: tag.color || "#FF5A5F",
+                }}
+              >
+                {tag.name}
+              </Badge>
+            ))}
+            {hasSubtasks && (
+              <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground ml-2">
+                <Icons.checkSquare className="h-3 w-3" />
+                {completedSubtasks}/{todo.subtasks.length}
+              </span>
+            )}
+            {hasAttachments && (
+              <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground ml-2">
+                <Icons.paperclip className="h-3 w-3" />1
+              </span>
+            )}
+            {todo.deadline && (
+              <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground ml-2">
+                <Icons.calendar className="h-3 w-3" />
+                {formatDate(todo.deadline)}
+              </span>
+            )}
+          </div>
+          {/* Bottom Row: Created Date & Status Toggle */}
+          <div className="flex justify-between items-center mt-1">
+            <span className="text-[10px] text-muted-foreground/70">
+              {todo.createdAt ? formatDate(todo.createdAt) : ""}
+            </span>
+            <Button
+              variant={todo.status === "completed" ? "ghost" : "outline"}
+              size="sm"
+              className="h-5 px-1.5 py-0 rounded-full"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleStatusToggle();
+              }}
+            >
+              {todo.status === "completed" ? (
+                <Icons.x className="h-2.5 w-2.5" />
+              ) : (
+                <Icons.check className="h-2.5 w-2.5" />
+              )}
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -261,17 +258,17 @@ export function TodoCard({
           <DialogHeader className="space-y-1">
             <DialogTitle className="text-xl">Edit Todo</DialogTitle>
             <DialogDescription className="text-sm">
-              Make changes to your task and save when you&apos;re done
+              Make changes to your task, add attachments, and save.
             </DialogDescription>
           </DialogHeader>
           <TodoForm
             todo={todo}
             tags={tags}
-            onSubmit={(updatedTodo) => {
-              onUpdate(updatedTodo);
+            onSubmit={async (updatedTodoData) => {
+              await onUpdate(updatedTodoData);
               setIsEditDialogOpen(false);
-              toast.success("Todo updated successfully");
             }}
+            onAttachmentsChanged={onAttachmentsChanged}
           />
         </DialogContent>
       </Dialog>
@@ -283,7 +280,7 @@ export function TodoCard({
             <div className="flex items-center gap-2 mb-2">
               <Badge
                 className={cn(
-                  "px-2.5 py-1 capitalize font-medium text-sm",
+                  "px-2.5 py-1 capitalize font-medium text-xs",
                   todo.status === "pending"
                     ? "bg-amber-50 text-amber-700"
                     : todo.status === "in-progress"
@@ -295,14 +292,8 @@ export function TodoCard({
               >
                 <div
                   className={cn(
-                    "w-2.5 h-2.5 rounded-full mr-1.5",
-                    todo.status === "pending"
-                      ? "bg-amber-500"
-                      : todo.status === "in-progress"
-                      ? "bg-sky-500"
-                      : todo.status === "completed"
-                      ? "bg-emerald-500"
-                      : "bg-slate-400"
+                    "w-2 h-2 rounded-full mr-1.5",
+                    getStatusColor(todo.status).replace("border-l-4 ", "bg-")
                   )}
                 />
                 {todo.status.replace("-", " ")}
@@ -324,10 +315,11 @@ export function TodoCard({
               Created {formatDate(todo.createdAt)}
             </DialogDescription>
           </DialogHeader>
-          {hasImage && (
-            <div className="w-full h-48 overflow-hidden relative">
+          {/* Cover Image */}
+          {coverImage && (
+            <div className="w-full h-48 overflow-hidden relative bg-muted">
               <Image
-                src={todo.image || "/placeholder.svg?height=192&width=450"}
+                src={coverImage || "/placeholder.svg"}
                 alt={todo.title}
                 fill
                 style={{ objectFit: "cover" }}
@@ -336,15 +328,20 @@ export function TodoCard({
               />
             </div>
           )}
-          <div className="px-6 py-4 space-y-4">
+          {/* Content Section */}
+          <div className="px-6 py-4 space-y-4 max-h-[50vh] overflow-y-auto">
+            {/* Description */}
             {todo.description && (
               <div className="text-sm text-muted-foreground">
                 {todo.description}
               </div>
             )}
+            {/* Tags */}
             {todoTags.length > 0 && (
               <div>
-                <h4 className="text-xs font-medium mb-1.5">Tags</h4>
+                <h4 className="text-xs font-medium text-muted-foreground mb-1.5">
+                  TAGS
+                </h4>
                 <div className="flex flex-wrap gap-1.5">
                   {todoTags.map((tag) => (
                     <Badge
@@ -362,26 +359,11 @@ export function TodoCard({
                 </div>
               </div>
             )}
-            {hasAttachments && (
-              <div>
-                <h4 className="text-xs font-medium mb-1.5">Attachments</h4>
-                <div className="space-y-1">
-                  {todo.attachments.map((a, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center gap-1.5 text-xs text-muted-foreground"
-                    >
-                      <Icons.paperclip className="h-3.5 w-3.5" />
-                      <span>{a}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            {/* Subtasks */}
             {hasSubtasks && (
               <div>
-                <h4 className="text-xs font-medium mb-1.5">
-                  Subtasks ({completedSubtasks}/{todo.subtasks.length})
+                <h4 className="text-xs font-medium text-muted-foreground mb-1.5">
+                  SUBTASKS ({completedSubtasks}/{todo.subtasks.length})
                 </h4>
                 <ul className="space-y-1.5 text-sm">
                   {todo.subtasks.map((subtask) => (
@@ -413,8 +395,42 @@ export function TodoCard({
                 </ul>
               </div>
             )}
+            {/* Attachments */}
+            {hasAttachments && (
+              <div>
+                <h4 className="text-xs font-medium text-muted-foreground mb-1.5">
+                  ATTACHMENT
+                </h4>
+                <div className="space-y-2">
+                  {todo.attachmentUrl && (
+                    <div className="flex items-center justify-between p-2 rounded-md border bg-muted/50">
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <div className="w-8 h-8 rounded overflow-hidden flex-shrink-0 bg-background">
+                          <Image
+                            src={todo.attachmentUrl}
+                            alt={todo.title}
+                            width={32}
+                            height={32}
+                            className="object-cover"
+                          />
+                        </div>
+                        <a
+                          href={todo.attachmentUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="truncate text-xs text-blue-600 underline"
+                        >
+                          View Image
+                        </a>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
-          <div className="border-t px-6 py-4 flex justify-end gap-2">
+          {/* Footer Actions */}
+          <div className="border-t px-6 py-3 bg-muted/30 flex justify-end gap-2">
             <Button
               variant="outline"
               size="sm"
@@ -429,7 +445,7 @@ export function TodoCard({
                 setIsEditDialogOpen(true);
               }}
             >
-              Edit
+              <Icons.edit className="h-3.5 w-3.5 mr-1.5" /> Edit Todo
             </Button>
           </div>
         </DialogContent>

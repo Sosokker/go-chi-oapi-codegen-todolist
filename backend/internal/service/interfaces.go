@@ -78,7 +78,7 @@ type UpdateTodoInput struct {
 	Status      *domain.TodoStatus
 	Deadline    *time.Time
 	TagIDs      *[]uuid.UUID
-	Attachments *[]string
+	// Attachments are managed via separate endpoints
 }
 
 type ListTodosInput struct {
@@ -92,18 +92,19 @@ type ListTodosInput struct {
 
 type TodoService interface {
 	CreateTodo(ctx context.Context, userID uuid.UUID, input CreateTodoInput) (*domain.Todo, error)
-	GetTodoByID(ctx context.Context, todoID, userID uuid.UUID) (*domain.Todo, error)                  // Includes tags, subtasks
-	ListUserTodos(ctx context.Context, userID uuid.UUID, input ListTodosInput) ([]domain.Todo, error) // Includes tags
+	GetTodoByID(ctx context.Context, todoID, userID uuid.UUID) (*domain.Todo, error) // Fetches attachment URL
+	ListUserTodos(ctx context.Context, userID uuid.UUID, input ListTodosInput) ([]domain.Todo, error)
 	UpdateTodo(ctx context.Context, todoID, userID uuid.UUID, input UpdateTodoInput) (*domain.Todo, error)
 	DeleteTodo(ctx context.Context, todoID, userID uuid.UUID) error
-	// Subtask methods delegate to SubtaskService but check Todo ownership first
+	// Subtask methods
 	ListSubtasks(ctx context.Context, todoID, userID uuid.UUID) ([]domain.Subtask, error)
 	CreateSubtask(ctx context.Context, todoID, userID uuid.UUID, input CreateSubtaskInput) (*domain.Subtask, error)
 	UpdateSubtask(ctx context.Context, todoID, subtaskID, userID uuid.UUID, input UpdateSubtaskInput) (*domain.Subtask, error)
 	DeleteSubtask(ctx context.Context, todoID, subtaskID, userID uuid.UUID) error
 	// Attachment methods
-	AddAttachment(ctx context.Context, todoID, userID uuid.UUID, fileName string, fileSize int64, fileContent io.Reader) (*domain.AttachmentInfo, error) // Returns info like ID/URL
-	DeleteAttachment(ctx context.Context, todoID, userID uuid.UUID, attachmentID string) error
+	AddAttachment(ctx context.Context, todoID, userID uuid.UUID, fileName string, fileSize int64, fileContent io.Reader) (*domain.Todo, error)
+	// Uploads, gets URL, updates Todo, returns updated Todo
+	DeleteAttachment(ctx context.Context, todoID, userID uuid.UUID) error // Deletes from storage and clears Todo URL
 }
 
 // --- Subtask Service ---
@@ -131,9 +132,10 @@ type FileStorageService interface {
 	Upload(ctx context.Context, userID, todoID uuid.UUID, originalFilename string, reader io.Reader, size int64) (storageID string, contentType string, err error)
 	// Delete removes the file associated with the given storage identifier.
 	Delete(ctx context.Context, storageID string) error
-	// GetURL retrieves a publicly accessible URL for the storage ID (optional, might not be needed if files are served differently).
+	// GetURL retrieves a publicly accessible URL for the storage ID (e.g., signed URL for GCS).
 	GetURL(ctx context.Context, storageID string) (string, error)
-	GenerateUniqueObjectName(originalFilename string) string
+	// GenerateUniqueObjectName creates a unique storage path/name for a file.
+	GenerateUniqueObjectName(userID, todoID uuid.UUID, originalFilename string) string
 }
 
 // ServiceRegistry bundles services

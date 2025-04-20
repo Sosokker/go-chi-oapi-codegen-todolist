@@ -56,14 +56,7 @@ func main() {
 	repoRegistry := repository.NewRepositoryRegistry(pool)
 
 	var storageService service.FileStorageService
-	switch cfg.Storage.Type {
-	case "local":
-		storageService, err = service.NewLocalStorageService(cfg.Storage.Local, logger)
-	case "gcs":
-		storageService, err = service.NewGCStorageService(cfg.Storage.GCS, logger)
-	default:
-		err = fmt.Errorf("unsupported storage type: %s", cfg.Storage.Type)
-	}
+	storageService, err = service.NewGCStorageService(cfg.Storage.GCS, logger)
 	if err != nil {
 		logger.Error("Failed to initialize storage service", "error", err, "type", cfg.Storage.Type)
 		os.Exit(1)

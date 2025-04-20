@@ -1,5 +1,3 @@
-// Generated types based on the OpenAPI spec
-
 export interface User {
   id: string
   username: string
@@ -59,8 +57,7 @@ export interface Todo {
   status: "pending" | "in-progress" | "completed"
   deadline?: string | null
   tagIds: string[]
-  attachments: string[]
-  image?: string | null
+  attachmentUrl?: string | null
   subtasks: Subtask[]
   createdAt: string
   updatedAt: string
@@ -72,7 +69,6 @@ export interface CreateTodoRequest {
   status?: "pending" | "in-progress" | "completed"
   deadline?: string | null
   tagIds?: string[]
-  image?: string | null
 }
 
 export interface UpdateTodoRequest {
@@ -81,8 +77,7 @@ export interface UpdateTodoRequest {
   status?: "pending" | "in-progress" | "completed"
   deadline?: string | null
   tagIds?: string[]
-  attachments?: string[]
-  image?: string | null
+  // attachments are managed via separate endpoints, removed from here
 }
 
 export interface Subtask {
@@ -103,15 +98,15 @@ export interface UpdateSubtaskRequest {
   completed?: boolean
 }
 
-export interface FileUploadResponse {
-  fileId: string
-  fileName: string
-  fileUrl: string
-  contentType: string
-  size: number
+export type FileUploadResponse = {
+	fileId: string // Identifier used for deletion (e.g., GCS object path)
+	fileName: string // Original filename
+	fileUrl: string // Publicly accessible URL (e.g., signed URL)
+	contentType: string // MIME type
+	size: number // Size in bytes
 }
 
 export interface Error {
-  code: number
-  message: string
+	code: number
+	message: string
 }

@@ -29,15 +29,15 @@ func NewPgxTodoRepository(queries *db.Queries, pool *pgxpool.Pool) TodoRepositor
 
 func mapDbTodoToDomain(dbTodo db.Todo) *domain.Todo {
 	return &domain.Todo{
-		ID:          dbTodo.ID,
-		UserID:      dbTodo.UserID,
-		Title:       dbTodo.Title,
-		Description: domain.NullStringToStringPtr(dbTodo.Description),
-		Status:      domain.TodoStatus(dbTodo.Status),
-		Deadline:    dbTodo.Deadline,
-		Attachments: dbTodo.Attachments,
-		CreatedAt:   dbTodo.CreatedAt,
-		UpdatedAt:   dbTodo.UpdatedAt,
+		ID:            dbTodo.ID,
+		UserID:        dbTodo.UserID,
+		Title:         dbTodo.Title,
+		Description:   domain.NullStringToStringPtr(dbTodo.Description),
+		Status:        domain.TodoStatus(dbTodo.Status),
+		AttachmentUrl: domain.NullStringToStringPtr(dbTodo.AttachmentUrl),
+		Deadline:      dbTodo.Deadline,
+		CreatedAt:     dbTodo.CreatedAt,
+		UpdatedAt:     dbTodo.UpdatedAt,
 	}
 }
 
@@ -161,7 +161,6 @@ func (r *pgxTodoRepository) Update(
 		Description: sql.NullString{String: derefString(updateData.Description), Valid: updateData.Description != nil},
 		Status:      db.NullTodoStatus{TodoStatus: db.TodoStatus(updateData.Status), Valid: true},
 		Deadline:    updateData.Deadline,
-		Attachments: updateData.Attachments,
 	}
 
 	dbTodo, err := r.q.UpdateTodo(ctx, params)
@@ -251,61 +250,19 @@ func (r *pgxTodoRepository) GetTags(
 	return tags, nil
 }
 
-// --- Attachments (String Identifiers in Array) ---
-
-func (r *pgxTodoRepository) AddAttachment(
+func (r *pgxTodoRepository) UpdateAttachmentURL(
 	ctx context.Context,
 	todoID, userID uuid.UUID,
-	attachmentID string,
+	attachmentURL *string,
 ) error {
-	if _, err := r.GetByID(ctx, todoID, userID); err != nil {
-		return err
-	}
-	if err := r.q.AddAttachmentToTodo(ctx, db.AddAttachmentToTodoParams{
-		ArrayAppend: attachmentID,
-		ID:          todoID,
-		UserID:      userID,
-	}); err != nil {
-		return fmt.Errorf("failed to add attachment: %w", err)
-	}
-	return nil
-}
-
-func (r *pgxTodoRepository) RemoveAttachment(
-	ctx context.Context,
-	todoID, userID uuid.UUID,
-	attachmentID string,
-) error {
-	if _, err := r.GetByID(ctx, todoID, userID); err != nil {
-		return err
-	}
-	if err := r.q.RemoveAttachmentFromTodo(ctx, db.RemoveAttachmentFromTodoParams{
-		ArrayRemove: attachmentID,
-		ID:          todoID,
-		UserID:      userID,
-	}); err != nil {
-		return fmt.Errorf("failed to remove attachment: %w", err)
-	}
-	return nil
-}
-
-func (r *pgxTodoRepository) SetAttachments(
-	ctx context.Context,
-	todoID, userID uuid.UUID,
-	attachmentIDs []string,
-) error {
-	_, err := r.GetByID(ctx, todoID, userID)
+	query := `
+		UPDATE todos
+		SET attachment_url = $1
+		WHERE id = $2 AND user_id = $3
+	`
+	_, err := r.pool.Exec(ctx, query, attachmentURL, todoID, userID)
 	if err != nil {
-		return err
-	}
-	updateParams := db.UpdateTodoParams{
-		ID:          todoID,
-		UserID:      userID,
-		Attachments: attachmentIDs,
-	}
-	_, err = r.q.UpdateTodo(ctx, updateParams)
-	if err != nil {
-		return fmt.Errorf("failed to set attachments using UpdateTodo: %w", err)
+		return fmt.Errorf("failed to update attachment URL: %w", err)
 	}
 	return nil
 }

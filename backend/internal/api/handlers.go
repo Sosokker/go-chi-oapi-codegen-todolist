@@ -139,7 +139,7 @@ func mapDomainTagToApi(tag *domain.Tag) *models.Tag {
 		UpdatedAt: &updatedAt}
 }
 
-func mapDomainTodoToApi(todo *domain.Todo) *models.Todo {
+func mapDomainTodoToApi(todo *domain.Todo, attachmentInfos []models.AttachmentInfo) *models.Todo { // Takes AttachmentInfo now
 	if todo == nil {
 		return nil
 	}
@@ -162,17 +162,18 @@ func mapDomainTodoToApi(todo *domain.Todo) *models.Todo {
 	updatedAt := todo.UpdatedAt
 
 	return &models.Todo{
-		Id:          &todoID,
-		UserId:      &userID,
-		Title:       todo.Title,
-		Description: todo.Description,
-		Status:      models.TodoStatus(todo.Status),
-		Deadline:    todo.Deadline,
-		TagIds:      tagIDs,
-		Attachments: todo.Attachments,
-		Subtasks:    &apiSubtasks,
-		CreatedAt:   &createdAt,
-		UpdatedAt:   &updatedAt}
+		Id:            &todoID,
+		UserId:        &userID,
+		Title:         todo.Title,
+		Description:   todo.Description,
+		Status:        models.TodoStatus(todo.Status),
+		Deadline:      todo.Deadline,
+		TagIds:        tagIDs,
+		AttachmentUrl: todo.AttachmentUrl,
+		Subtasks:      &apiSubtasks,
+		CreatedAt:     &createdAt,
+		UpdatedAt:     &updatedAt,
+	}
 }
 
 func mapDomainSubtaskToApi(subtask *domain.Subtask) *models.Subtask {
@@ -193,11 +194,11 @@ func mapDomainSubtaskToApi(subtask *domain.Subtask) *models.Subtask {
 		UpdatedAt:   &updatedAt}
 }
 
-func mapDomainAttachmentInfoToApi(info *domain.AttachmentInfo) *models.FileUploadResponse {
+func mapDomainAttachmentInfoToApi(info *domain.AttachmentInfo) *models.AttachmentInfo {
 	if info == nil {
 		return nil
 	}
-	return &models.FileUploadResponse{
+	return &models.AttachmentInfo{
 		FileId:      info.FileID,
 		FileName:    info.FileName,
 		FileUrl:     info.FileURL,
@@ -577,6 +578,8 @@ func (h *ApiHandler) DeleteTagById(w http.ResponseWriter, r *http.Request, tagId
 
 // --- Todo Handlers ---
 
+// CreateTodo remains the same
+
 func (h *ApiHandler) CreateTodo(w http.ResponseWriter, r *http.Request) {
 	userID, err := GetUserIDFromContext(r.Context())
 	if err != nil {
@@ -615,10 +618,12 @@ func (h *ApiHandler) CreateTodo(w http.ResponseWriter, r *http.Request) {
 		SendJSONError(w, err, http.StatusInternalServerError, h.logger)
 		return
 	}
-	apiTodo := mapDomainTodoToApi(todo)
+	// Newly created todo won't have attachments yet
+	apiTodo := mapDomainTodoToApi(todo, []models.AttachmentInfo{})
 	SendJSONResponse(w, http.StatusCreated, apiTodo, h.logger)
 }
 
+// ListTodos remains the same, doesn't include full attachment details for performance
 func (h *ApiHandler) ListTodos(w http.ResponseWriter, r *http.Request, params ListTodosParams) {
 	userID, err := GetUserIDFromContext(r.Context())
 	if err != nil {
@@ -627,7 +632,7 @@ func (h *ApiHandler) ListTodos(w http.ResponseWriter, r *http.Request, params Li
 	}
 
 	input := service.ListTodosInput{
-		Limit:  20,
+		Limit:  20, // Default limit
 		Offset: 0,
 	}
 	if params.Limit != nil {
@@ -641,13 +646,8 @@ func (h *ApiHandler) ListTodos(w http.ResponseWriter, r *http.Request, params Li
 		input.Status = &domainStatus
 	}
 	if params.TagId != nil {
-		input.TagID = params.TagId
-	}
-	if params.DeadlineBefore != nil {
-		input.DeadlineBefore = params.DeadlineBefore
-	}
-	if params.DeadlineAfter != nil {
-		input.DeadlineAfter = params.DeadlineAfter
+		domainTagID := uuid.UUID(*params.TagId)
+		input.TagID = &domainTagID
 	}
 
 	todos, err := h.services.Todo.ListUserTodos(r.Context(), userID, input)
@@ -658,27 +658,51 @@ func (h *ApiHandler) ListTodos(w http.ResponseWriter, r *http.Request, params Li
 
 	apiTodos := make([]models.Todo, len(todos))
 	for i, todo := range todos {
-		apiTodos[i] = *mapDomainTodoToApi(&todo)
+		// For list view, if there is an attachmentUrl, include it as a single-item array
+		var attachmentInfos []models.AttachmentInfo
+		if todo.AttachmentUrl != nil && *todo.AttachmentUrl != "" {
+			attachmentInfos = []models.AttachmentInfo{{FileId: *todo.AttachmentUrl}}
+		} else {
+			attachmentInfos = []models.AttachmentInfo{}
+		}
+		mappedTodo := mapDomainTodoToApi(&todo, attachmentInfos)
+		if mappedTodo != nil {
+			apiTodos[i] = *mappedTodo
+		}
 	}
 
 	SendJSONResponse(w, http.StatusOK, apiTodos, h.logger)
 }
 
+// GetTodoById updated for single attachmentUrl
 func (h *ApiHandler) GetTodoById(w http.ResponseWriter, r *http.Request, todoId openapi_types.UUID) {
-	userID, err := GetUserIDFromContext(r.Context())
+	ctx := r.Context()
+	userID, err := GetUserIDFromContext(ctx)
+	if err != nil {
+		SendJSONError(w, err, http.StatusInternalServerError, h.logger)
+		return
+	}
+	domainTodoID := uuid.UUID(todoId)
+
+	todo, err := h.services.Todo.GetTodoByID(ctx, domainTodoID, userID)
 	if err != nil {
 		SendJSONError(w, err, http.StatusInternalServerError, h.logger)
 		return
 	}
 
-	todo, err := h.services.Todo.GetTodoByID(r.Context(), todoId, userID)
-	if err != nil {
-		SendJSONError(w, err, http.StatusInternalServerError, h.logger)
-		return
+	// Map attachmentUrl to API model as a single-item array if present
+	var apiAttachmentInfos []models.AttachmentInfo
+	if todo.AttachmentUrl != nil && *todo.AttachmentUrl != "" {
+		apiAttachmentInfos = []models.AttachmentInfo{{FileId: *todo.AttachmentUrl}}
+	} else {
+		apiAttachmentInfos = []models.AttachmentInfo{}
 	}
 
-	SendJSONResponse(w, http.StatusOK, mapDomainTodoToApi(todo), h.logger)
+	apiTodo := mapDomainTodoToApi(todo, apiAttachmentInfos)
+	SendJSONResponse(w, http.StatusOK, apiTodo, h.logger)
 }
+
+// UpdateTodoById remains the same=
 
 func (h *ApiHandler) UpdateTodoById(w http.ResponseWriter, r *http.Request, todoId openapi_types.UUID) {
 	userID, err := GetUserIDFromContext(r.Context())
@@ -711,9 +735,7 @@ func (h *ApiHandler) UpdateTodoById(w http.ResponseWriter, r *http.Request, todo
 		}
 		input.TagIDs = &domainTagIDs
 	}
-	if body.Attachments != nil {
-		input.Attachments = body.Attachments
-	}
+	// Note: Attachments are NOT updated via this endpoint in this design
 
 	todo, err := h.services.Todo.UpdateTodo(r.Context(), domainTodoID, userID, input)
 	if err != nil {
@@ -721,23 +743,100 @@ func (h *ApiHandler) UpdateTodoById(w http.ResponseWriter, r *http.Request, todo
 		return
 	}
 
-	SendJSONResponse(w, http.StatusOK, mapDomainTodoToApi(todo), h.logger)
+	// Prepare attachment info for API response using AttachmentUrl field
+	var apiAttachmentInfos []models.AttachmentInfo
+	if todo.AttachmentUrl != nil && *todo.AttachmentUrl != "" {
+		apiAttachmentInfos = []models.AttachmentInfo{{FileId: *todo.AttachmentUrl}}
+	} else {
+		apiAttachmentInfos = []models.AttachmentInfo{}
+	}
+
+	apiTodo := mapDomainTodoToApi(todo, apiAttachmentInfos)
+	SendJSONResponse(w, http.StatusOK, apiTodo, h.logger)
 }
 
+// DeleteTodoById remains the same (service layer handles attachment deletion)
 func (h *ApiHandler) DeleteTodoById(w http.ResponseWriter, r *http.Request, todoId openapi_types.UUID) {
 	userID, err := GetUserIDFromContext(r.Context())
 	if err != nil {
 		SendJSONError(w, err, http.StatusInternalServerError, h.logger)
 		return
 	}
+	domainTodoID := uuid.UUID(todoId)
 
-	err = h.services.Todo.DeleteTodo(r.Context(), todoId, userID)
+	err = h.services.Todo.DeleteTodo(r.Context(), domainTodoID, userID)
 	if err != nil {
 		SendJSONError(w, err, http.StatusInternalServerError, h.logger)
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- Attachment Handlers ---
+
+func (h *ApiHandler) DeleteTodoAttachment(w http.ResponseWriter, r *http.Request, todoId openapi_types.UUID) {
+	ctx := r.Context()
+	userID, err := GetUserIDFromContext(ctx)
+	if err != nil {
+		SendJSONError(w, err, http.StatusInternalServerError, h.logger)
+		return
+	}
+	domainTodoID := uuid.UUID(todoId)
+
+	h.logger.DebugContext(ctx, "Request to delete attachment", "todoId", todoId)
+
+	err = h.services.Todo.DeleteAttachment(ctx, domainTodoID, userID)
+	if err != nil {
+		SendJSONError(w, err, http.StatusInternalServerError, h.logger)
+		return
+	}
+
+	h.logger.InfoContext(ctx, "Attachment deleted successfully", "todoId", todoId)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *ApiHandler) UploadOrReplaceTodoAttachment(w http.ResponseWriter, r *http.Request, todoId openapi_types.UUID) {
+	userID, err := GetUserIDFromContext(r.Context())
+	if err != nil {
+		SendJSONError(w, err, http.StatusInternalServerError, h.logger)
+		return
+	}
+	domainTodoID := uuid.UUID(todoId)
+
+	// Parse multipart form (limit to 10 MB)
+	err = r.ParseMultipartForm(10 << 20)
+	if err != nil {
+		SendJSONError(w, fmt.Errorf("failed to parse multipart form: %w", err), http.StatusBadRequest, h.logger)
+		return
+	}
+
+	file, fileHeader, err := r.FormFile("file")
+	if err != nil {
+		SendJSONError(w, fmt.Errorf("missing or invalid file: %w", err), http.StatusBadRequest, h.logger)
+		return
+	}
+	defer file.Close()
+
+	fileName := fileHeader.Filename
+	fileSize := fileHeader.Size
+
+	todo, err := h.services.Todo.AddAttachment(r.Context(), domainTodoID, userID, fileName, fileSize, file)
+	if err != nil {
+		SendJSONError(w, err, http.StatusInternalServerError, h.logger)
+		return
+	}
+
+	// Prepare attachment info for API response using AttachmentUrl field
+	var apiAttachmentInfos []models.AttachmentInfo
+	if todo.AttachmentUrl != nil && *todo.AttachmentUrl != "" {
+		apiAttachmentInfos = []models.AttachmentInfo{{FileId: *todo.AttachmentUrl}}
+	} else {
+		apiAttachmentInfos = []models.AttachmentInfo{}
+	}
+
+	apiTodo := mapDomainTodoToApi(todo, apiAttachmentInfos)
+	SendJSONResponse(w, http.StatusOK, apiTodo, h.logger)
 }
 
 // --- Subtask Handlers ---
@@ -821,56 +920,6 @@ func (h *ApiHandler) DeleteSubtaskById(w http.ResponseWriter, r *http.Request, t
 	}
 
 	err = h.services.Todo.DeleteSubtask(r.Context(), todoId, subtaskId, userID)
-	if err != nil {
-		SendJSONError(w, err, http.StatusInternalServerError, h.logger)
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// --- Attachment Handlers ---
-
-func (h *ApiHandler) UploadTodoAttachment(w http.ResponseWriter, r *http.Request, todoId openapi_types.UUID) {
-	userID, err := GetUserIDFromContext(r.Context())
-	if err != nil {
-		SendJSONError(w, err, http.StatusInternalServerError, h.logger)
-		return
-	}
-
-	err = r.ParseMultipartForm(10 << 20)
-	if err != nil {
-		SendJSONError(w, fmt.Errorf("failed to parse multipart form: %w", domain.ErrBadRequest), http.StatusBadRequest, h.logger)
-		return
-	}
-
-	file, handler, err := r.FormFile("file")
-	if err != nil {
-		SendJSONError(w, fmt.Errorf("error retrieving the file from form-data: %w", domain.ErrBadRequest), http.StatusBadRequest, h.logger)
-		return
-	}
-	defer file.Close()
-
-	fileName := handler.Filename
-	fileSize := handler.Size
-
-	attachmentInfo, err := h.services.Todo.AddAttachment(r.Context(), todoId, userID, fileName, fileSize, file)
-	if err != nil {
-		SendJSONError(w, err, http.StatusInternalServerError, h.logger)
-		return
-	}
-
-	SendJSONResponse(w, http.StatusCreated, mapDomainAttachmentInfoToApi(attachmentInfo), h.logger)
-}
-
-func (h *ApiHandler) DeleteTodoAttachment(w http.ResponseWriter, r *http.Request, todoId openapi_types.UUID, attachmentId string) {
-	userID, err := GetUserIDFromContext(r.Context())
-	if err != nil {
-		SendJSONError(w, err, http.StatusInternalServerError, h.logger)
-		return
-	}
-
-	err = h.services.Todo.DeleteAttachment(r.Context(), todoId, userID, attachmentId)
 	if err != nil {
 		SendJSONError(w, err, http.StatusInternalServerError, h.logger)
 		return

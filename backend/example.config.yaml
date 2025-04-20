@@ -7,6 +7,9 @@ server:
   idleTimeout: 60s
   basePath: "/api/v1" # Matches OpenAPI server URL
 
+frontend:
+  url: "http://localhost:3000"
+
 database:
   url: "postgresql://postgres:@localhost:5433/postgres?sslmode=disable" # Use env vars in prod
 
@@ -39,7 +42,5 @@ cache:
   cleanupInterval: 10m
 
 storage:
-  local:
-    path: "/" # gcs:
-    #   bucketName: "your-gcs-bucket-name" # Env: STORAGE_GCS_BUCKETNAME
-    #   credentialsFile: "/path/to/gcs-credentials.json" # Env: GOOGLE_APPLICATION_CREDENTIALS
+    bucketName: "your-gcs-bucket-name" # Env: STORAGE_GCS_BUCKETNAME
+    credentialsFile: "/path/to/gcs-credentials.json" # Env: GOOGLE_APPLICATION_CREDENTIALS

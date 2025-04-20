@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+// import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
@@ -15,45 +15,45 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Icons } from "@/components/icons";
-import { Badge } from "@/components/ui/badge";
+// import { Badge } from "@/components/ui/badge";
 
 export function Navbar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
-  const [notificationCount, setNotificationCount] = useState(3);
+  // const [notificationCount, setNotificationCount] = useState(3);
 
-  const notifications = [
-    {
-      id: 1,
-      title: "New task assigned",
-      description: "You have been assigned a new task",
-      time: "5 minutes ago",
-      read: false,
-    },
-    {
-      id: 2,
-      title: "Task completed",
-      description: "Your task 'Update documentation' has been completed",
-      time: "1 hour ago",
-      read: false,
-    },
-    {
-      id: 3,
-      title: "Meeting reminder",
-      description: "Team meeting starts in 30 minutes",
-      time: "2 hours ago",
-      read: false,
-    },
-  ];
+  // const notifications = [
+  //   {
+  //     id: 1,
+  //     title: "New task assigned",
+  //     description: "You have been assigned a new task",
+  //     time: "5 minutes ago",
+  //     read: false,
+  //   },
+  //   {
+  //     id: 2,
+  //     title: "Task completed",
+  //     description: "Your task 'Update documentation' has been completed",
+  //     time: "1 hour ago",
+  //     read: false,
+  //   },
+  //   {
+  //     id: 3,
+  //     title: "Meeting reminder",
+  //     description: "Team meeting starts in 30 minutes",
+  //     time: "2 hours ago",
+  //     read: false,
+  //   },
+  // ];
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const markAsRead = (id: number) => {
-    setNotificationCount(Math.max(0, notificationCount - 1));
-  };
+  // const markAsRead = (id: number) => {
+  //   setNotificationCount(Math.max(0, notificationCount - 1));
+  // };
 
-  const markAllAsRead = () => {
-    setNotificationCount(0);
-  };
+  // const markAllAsRead = () => {
+  //   setNotificationCount(0);
+  // };
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -110,7 +110,7 @@ export function Navbar() {
         </div>
         <div className="flex flex-1 items-center justify-between space-x-2 md:justify-end">
           {/* Notifications Dropdown */}
-          <DropdownMenu>
+          {/* <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
@@ -173,7 +173,7 @@ export function Navbar() {
                 </Link>
               </DropdownMenuItem>
             </DropdownMenuContent>
-          </DropdownMenu>
+          </DropdownMenu> */}
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

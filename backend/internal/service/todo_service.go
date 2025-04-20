@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"time"
 
 	"github.com/Sosokker/todolist-backend/internal/domain"
 	"github.com/Sosokker/todolist-backend/internal/repository"
@@ -14,8 +15,8 @@ import (
 
 type todoService struct {
 	todoRepo       repository.TodoRepository
-	tagService     TagService     // Depend on TagService for validation
-	subtaskService SubtaskService // Depend on SubtaskService
+	tagService     TagService
+	subtaskService SubtaskService
 	storageService FileStorageService
 	logger         *slog.Logger
 }
@@ -56,13 +57,13 @@ func (s *todoService) CreateTodo(ctx context.Context, userID uuid.UUID, input Cr
 	}
 
 	newTodo := &domain.Todo{
-		UserID:      userID,
-		Title:       input.Title,
-		Description: input.Description,
-		Status:      status,
-		Deadline:    input.Deadline,
-		TagIDs:      input.TagIDs,
-		Attachments: []string{},
+		UserID:        userID,
+		Title:         input.Title,
+		Description:   input.Description,
+		Status:        status,
+		Deadline:      input.Deadline,
+		TagIDs:        input.TagIDs,
+		AttachmentUrl: nil, // No attachment on creation
 	}
 
 	createdTodo, err := s.todoRepo.Create(ctx, newTodo)
@@ -114,6 +115,9 @@ func (s *todoService) GetTodoByID(ctx context.Context, todoID, userID uuid.UUID)
 		todo.Subtasks = subtasks
 	}
 
+	// Note: todo.Attachments currently holds storage IDs (paths).
+	// The handler will call GetAttachmentURLs to convert these to full URLs for the API response.
+
 	return todo, nil
 }
 
@@ -160,20 +164,21 @@ func (s *todoService) UpdateTodo(ctx context.Context, todoID, userID uuid.UUID, 
 	}
 
 	updateData := &domain.Todo{
-		ID:          existingTodo.ID,
-		UserID:      existingTodo.UserID,
-		Title:       existingTodo.Title,
-		Description: existingTodo.Description,
-		Status:      existingTodo.Status,
-		Deadline:    existingTodo.Deadline,
-		Attachments: existingTodo.Attachments,
+		ID:            existingTodo.ID,
+		UserID:        existingTodo.UserID,
+		Title:         existingTodo.Title,
+		Description:   existingTodo.Description,
+		Status:        existingTodo.Status,
+		Deadline:      existingTodo.Deadline,
+		TagIDs:        existingTodo.TagIDs,
+		AttachmentUrl: existingTodo.AttachmentUrl, // Single attachment URL
 	}
 
 	updated := false
 
 	if input.Title != nil {
-		if *input.Title == "" {
-			return nil, fmt.Errorf("title cannot be empty: %w", domain.ErrValidation)
+		if err := ValidateTodoTitle(*input.Title); err != nil {
+			return nil, err
 		}
 		updateData.Title = *input.Title
 		updated = true
@@ -203,21 +208,10 @@ func (s *todoService) UpdateTodo(ctx context.Context, todoID, userID uuid.UUID, 
 			s.logger.ErrorContext(ctx, "Failed to update tags for todo", "error", err, "todoId", todoID)
 			return nil, domain.ErrInternalServer
 		}
-		updateData.TagIDs = *input.TagIDs
 		tagsUpdated = true
 	}
 
-	attachmentsUpdated := false
-	if input.Attachments != nil {
-		err = s.todoRepo.SetAttachments(ctx, todoID, userID, *input.Attachments)
-		if err != nil {
-			s.logger.ErrorContext(ctx, "Failed to update attachments list for todo", "error", err, "todoId", todoID)
-			return nil, domain.ErrInternalServer
-		}
-		updateData.Attachments = *input.Attachments
-		attachmentsUpdated = true
-	}
-
+	// Update the core fields if anything changed
 	var updatedRepoTodo *domain.Todo
 	if updated {
 		updatedRepoTodo, err = s.todoRepo.Update(ctx, todoID, userID, updateData)
@@ -226,42 +220,57 @@ func (s *todoService) UpdateTodo(ctx context.Context, todoID, userID uuid.UUID, 
 			return nil, domain.ErrInternalServer
 		}
 	} else {
-		updatedRepoTodo = updateData
+		// If only tags were updated, we still need the latest full todo data
+		updatedRepoTodo = existingTodo
 	}
 
-	if !updated && (tagsUpdated || attachmentsUpdated) {
-		updatedRepoTodo.Title = existingTodo.Title
-		updatedRepoTodo.Description = existingTodo.Description
+	// If tags were updated, reload the full todo to get the updated TagIDs array
+	if tagsUpdated {
+		reloadedTodo, reloadErr := s.GetTodoByID(ctx, todoID, userID)
+		if reloadErr != nil {
+			s.logger.WarnContext(ctx, "Failed to reload todo after tag update, returning potentially stale data", "error", reloadErr, "todoId", todoID)
+			// Return the todo data we have, even if tags might be slightly out of sync temporarily
+			if updatedRepoTodo != nil {
+				updatedRepoTodo.TagIDs = *input.TagIDs // Manually set IDs based on input
+				return updatedRepoTodo, nil
+			}
+			return existingTodo, nil // Fallback
+		}
+		return reloadedTodo, nil
 	}
 
-	finalTodo, err := s.GetTodoByID(ctx, todoID, userID)
-	if err != nil {
-		s.logger.WarnContext(ctx, "Failed to reload todo after update, returning partial data", "error", err, "todoId", todoID)
-		return updatedRepoTodo, nil
-	}
-
-	return finalTodo, nil
+	return updatedRepoTodo, nil // Return the result from repo Update or existing if only tags changed
 }
 
 func (s *todoService) DeleteTodo(ctx context.Context, todoID, userID uuid.UUID) error {
 	existingTodo, err := s.todoRepo.GetByID(ctx, todoID, userID)
 	if err != nil {
-		return err
+		if errors.Is(err, domain.ErrNotFound) {
+			return nil // Already deleted or doesn't exist/belong to user
+		}
+		return err // Internal error
 	}
 
-	attachmentIDsToDelete := existingTodo.Attachments
-
+	// Delete the Todo record from the database first
 	err = s.todoRepo.Delete(ctx, todoID, userID)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "Failed to delete todo from repo", "error", err, "todoId", todoID, "userId", userID)
 		return domain.ErrInternalServer
 	}
 
-	for _, storageID := range attachmentIDsToDelete {
-		if err := s.storageService.Delete(ctx, storageID); err != nil {
+	// If there is an attachment, attempt to delete it from storage (best effort)
+	if existingTodo.AttachmentUrl != nil {
+		storageID := *existingTodo.AttachmentUrl
+		deleteCtx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+		defer cancel()
+		if err := s.storageService.Delete(deleteCtx, storageID); err != nil {
 			s.logger.WarnContext(ctx, "Failed to delete attachment file during todo deletion", "error", err, "storageId", storageID, "todoId", todoID)
+		} else {
+			s.logger.InfoContext(ctx, "Deleted attachment file during todo deletion", "storageId", storageID, "todoId", todoID)
 		}
 	}
+
+	s.logger.InfoContext(ctx, "Successfully deleted todo and attempted attachment cleanup", "todoId", todoID, "userId", userID)
 	return nil
 }
 
@@ -284,72 +293,67 @@ func (s *todoService) CreateSubtask(ctx context.Context, todoID, userID uuid.UUI
 }
 
 func (s *todoService) UpdateSubtask(ctx context.Context, todoID, subtaskID, userID uuid.UUID, input UpdateSubtaskInput) (*domain.Subtask, error) {
+	// Check if parent todo belongs to user first (optional but safer)
+	_, err := s.todoRepo.GetByID(ctx, todoID, userID)
+	if err != nil {
+		return nil, err
+	}
+	// Subtask service's GetByID/Update methods inherently check ownership via JOINs
 	return s.subtaskService.Update(ctx, subtaskID, userID, input)
 }
 
 func (s *todoService) DeleteSubtask(ctx context.Context, todoID, subtaskID, userID uuid.UUID) error {
+	// Check if parent todo belongs to user first (optional but safer)
+	_, err := s.todoRepo.GetByID(ctx, todoID, userID)
+	if err != nil {
+		return err
+	}
+	// Subtask service's Delete method inherently checks ownership via JOINs
 	return s.subtaskService.Delete(ctx, subtaskID, userID)
 }
 
-// --- Attachment Methods --- (Implementation depends on FileStorageService)
+// --- Attachment Methods (Simplified) ---
 
-func (s *todoService) AddAttachment(ctx context.Context, todoID, userID uuid.UUID, originalFilename string, fileSize int64, fileContent io.Reader) (*domain.AttachmentInfo, error) {
+func (s *todoService) AddAttachment(ctx context.Context, todoID, userID uuid.UUID, fileName string, fileSize int64, fileContent io.Reader) (*domain.Todo, error) {
 	_, err := s.todoRepo.GetByID(ctx, todoID, userID)
 	if err != nil {
 		return nil, err
 	}
 
-	storageID, contentType, err := s.storageService.Upload(ctx, userID, todoID, originalFilename, fileContent, fileSize)
+	storageID, _, err := s.storageService.Upload(ctx, userID, todoID, fileName, fileContent, fileSize)
 	if err != nil {
-		s.logger.ErrorContext(ctx, "Failed to upload attachment to storage", "error", err, "todoId", todoID, "fileName", originalFilename)
-		return nil, domain.ErrInternalServer
+		s.logger.ErrorContext(ctx, "Failed to upload attachment", "error", err, "todoId", todoID)
+		return nil, err
 	}
 
-	if err = s.todoRepo.AddAttachment(ctx, todoID, userID, storageID); err != nil {
-		s.logger.ErrorContext(ctx, "Failed to add attachment storage ID to todo", "error", err, "todoId", todoID, "storageId", storageID)
-		if delErr := s.storageService.Delete(context.Background(), storageID); delErr != nil {
-			s.logger.ErrorContext(ctx, "Failed to delete orphaned attachment file after DB error", "deleteError", delErr, "storageId", storageID)
-		}
-		return nil, domain.ErrInternalServer
+	// Construct the public URL for the uploaded file in GCS
+	publicURL, err := s.storageService.GetURL(ctx, storageID)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "Failed to generate public URL for attachment", "error", err, "todoId", todoID, "storageId", storageID)
+		return nil, err
 	}
 
-	fileURL, _ := s.storageService.GetURL(ctx, storageID)
+	if err := s.todoRepo.UpdateAttachmentURL(ctx, todoID, userID, &publicURL); err != nil {
+		s.logger.ErrorContext(ctx, "Failed to update attachment URL in repo", "error", err, "todoId", todoID)
+		return nil, err
+	}
 
-	return &domain.AttachmentInfo{
-		FileID:      storageID,
-		FileName:    originalFilename,
-		FileURL:     fileURL,
-		ContentType: contentType,
-		Size:        fileSize,
-	}, nil
+	s.logger.InfoContext(ctx, "Attachment added successfully", "todoId", todoID, "storageId", storageID)
+
+	return s.GetTodoByID(ctx, todoID, userID)
 }
 
-func (s *todoService) DeleteAttachment(ctx context.Context, todoID, userID uuid.UUID, storageID string) error {
-	todo, err := s.todoRepo.GetByID(ctx, todoID, userID)
+func (s *todoService) DeleteAttachment(ctx context.Context, todoID, userID uuid.UUID) error {
+	_, err := s.todoRepo.GetByID(ctx, todoID, userID)
 	if err != nil {
 		return err
 	}
 
-	found := false
-	for _, att := range todo.Attachments {
-		if att == storageID {
-			found = true
-			break
-		}
-	}
-	if !found {
-		return fmt.Errorf("attachment '%s' not found on todo %s: %w", storageID, todoID, domain.ErrNotFound)
+	if err := s.todoRepo.UpdateAttachmentURL(ctx, todoID, userID, nil); err != nil {
+		s.logger.ErrorContext(ctx, "Failed to update attachment URL in repo", "error", err, "todoId", todoID)
+		return err
 	}
 
-	if err = s.todoRepo.RemoveAttachment(ctx, todoID, userID, storageID); err != nil {
-		s.logger.ErrorContext(ctx, "Failed to remove attachment ID from todo", "error", err, "todoId", todoID, "storageId", storageID)
-		return domain.ErrInternalServer
-	}
-
-	if err = s.storageService.Delete(ctx, storageID); err != nil {
-		s.logger.ErrorContext(ctx, "Failed to delete attachment file from storage after removing DB ref", "error", err, "storageId", storageID)
-		return nil
-	}
-
+	s.logger.InfoContext(ctx, "Attachment deleted successfully", "todoId", todoID)
 	return nil
 }
