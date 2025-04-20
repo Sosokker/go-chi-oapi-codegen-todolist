@@ -1,0 +1,45 @@
+# Example configuration file for the backend.
+
+server:
+  port: 8080
+  readTimeout: 15s
+  writeTimeout: 15s
+  idleTimeout: 60s
+  basePath: "/api/v1" # Matches OpenAPI server URL
+
+database:
+  url: "postgresql://postgres:@localhost:5433/postgres?sslmode=disable" # Use env vars in prod
+
+jwt:
+  secret: "your-very-secret-key-change-me" # Use env vars in prod
+  expiryMinutes: 60
+  cookieName: "jwt_token"
+  cookieDomain: "localhost" # Set appropriately for your domain
+  cookiePath: "/"
+  cookieSecure: false # Set true if using HTTPS
+  cookieHttpOnly: true
+  cookieSameSite: "Lax" # Lax or Strict
+
+log:
+  level: "debug" # debug, info, warn, error
+  format: "json" # json or text
+
+oauth:
+  google:
+    clientId: "YOUR_GOOGLE_CLIENT_ID" # Use env vars
+    clientSecret: "YOUR_GOOGLE_CLIENT_SECRET" # Use env vars
+    redirectUrl: "http://localhost:8080/api/v1/auth/google/callback" # Must match Google Console config
+    scopes:
+      - "https://www.googleapis.com/auth/userinfo.profile"
+      - "https://www.googleapis.com/auth/userinfo.email"
+    stateSecret: "your-oauth-state-secret-change-me" # For signing state cookie
+
+cache:
+  defaultExpiration: 5m
+  cleanupInterval: 10m
+
+storage:
+  local:
+    path: "/" # gcs:
+    #   bucketName: "your-gcs-bucket-name" # Env: STORAGE_GCS_BUCKETNAME
+    #   credentialsFile: "/path/to/gcs-credentials.json" # Env: GOOGLE_APPLICATION_CREDENTIALS
