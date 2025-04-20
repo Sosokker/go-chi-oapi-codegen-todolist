@@ -73,15 +73,11 @@ test:
 
 migrate-up:
 	@echo ">> Applying migrations..."
-	$(MIGRATE) -database "$(DB_URL)" -path $(MIGRATIONS_PATH) up
+	$(MIGRATE) -database "$(DB_URL)" -path $(MIGRATIONS_PATH) up 2
 
 migrate-down:
 	@echo ">> Rolling back last migration..."
 	$(MIGRATE) -database "$(DB_URL)" -path $(MIGRATIONS_PATH) down 1
-
-migrate-force:
-	@echo ">> Forcing migration version $(VERSION)..."
-	$(MIGRATE) -database "$(DB_URL)" -path $(MIGRATIONS_PATH) force $(VERSION)
 
 clean:
 	@echo ">> Cleaning build artifacts..."
