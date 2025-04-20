@@ -23,3 +23,5 @@ config.yaml # Often contains secrets, check your policy
 
 # Local development artifacts
 /tmp
+
+config.yaml
