@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Icons } from "@/components/icons";
-import { Checkbox } from "@/components/ui/checkbox";
+// import { Checkbox } from "@/components/ui/checkbox";
 import Image from "next/image";
 
 export default function SignupPage() {
@@ -20,13 +20,12 @@ export default function SignupPage() {
   const { login } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
-    firstName: "",
-    lastName: "",
+    username: "",
     email: "",
     password: "",
   });
   const [showPassword, setShowPassword] = useState(false);
-  const [agreedToTerms, setAgreedToTerms] = useState(false);
+  // const [agreedToTerms, setAgreedToTerms] = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -36,16 +35,15 @@ export default function SignupPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!agreedToTerms) {
-      toast.error("You must agree to the Terms & Conditions");
-      return;
-    }
+    // if (!agreedToTerms) {
+    //   toast.error("You must agree to the Terms & Conditions");
+    //   return;
+    // }
 
     setIsLoading(true);
 
     try {
-      const { firstName, lastName, email, password } = formData;
-      const username = `${firstName} ${lastName}`.trim();
+      const { username, email, password } = formData;
       const user = await signupUserApi({ username, email, password });
 
       // In a real app, we'd get a token back from signup or do a separate login
@@ -105,13 +103,13 @@ export default function SignupPage() {
             >
               TODO
             </Link>
-            <Link
+            {/* <Link
               href="/"
               className="text-sm text-gray-500 hover:text-[#FF5A5F] transition-colors flex items-center"
             >
               <span>Back to website</span>
               <Icons.arrowRight className="ml-1 h-4 w-4" />
-            </Link>
+            </Link> */}
           </div>
 
           <h1 className="text-gray-900 text-3xl font-bold mb-2">
@@ -125,35 +123,19 @@ export default function SignupPage() {
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="firstName" className="text-gray-900">
-                  First name
-                </Label>
-                <Input
-                  id="firstName"
-                  name="firstName"
-                  placeholder="John"
-                  value={formData.firstName}
-                  onChange={handleChange}
-                  required
-                  className="bg-white border-gray-300 text-gray-900 placeholder-gray-400"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="lastName" className="text-gray-900">
-                  Last name
-                </Label>
-                <Input
-                  id="lastName"
-                  name="lastName"
-                  placeholder="Doe"
-                  value={formData.lastName}
-                  onChange={handleChange}
-                  required
-                  className="bg-white border-gray-300 text-gray-900 placeholder-gray-400"
-                />
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="username" className="text-gray-900">
+                Username
+              </Label>
+              <Input
+                id="username"
+                name="username"
+                placeholder="johndoe"
+                value={formData.username}
+                onChange={handleChange}
+                required
+                className="bg-white border-gray-300 text-gray-900 placeholder-gray-400"
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="email" className="text-gray-900">
@@ -199,7 +181,7 @@ export default function SignupPage() {
               </div>
             </div>
 
-            <div className="flex items-center space-x-2">
+            {/* <div className="flex items-center space-x-2">
               <Checkbox
                 id="terms"
                 checked={agreedToTerms}
@@ -217,7 +199,7 @@ export default function SignupPage() {
                   Terms & Conditions
                 </Link>
               </label>
-            </div>
+            </div> */}
 
             <Button
               type="submit"

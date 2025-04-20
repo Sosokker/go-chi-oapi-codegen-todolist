@@ -97,13 +97,13 @@ export default function LoginPage() {
             >
               TODO
             </Link>
-            <Link
+            {/* <Link
               href="/"
               className="text-sm text-gray-500 hover:text-[#FF5A5F] transition-colors flex items-center"
             >
               <span>Back to website</span>
               <Icons.arrowRight className="ml-1 h-4 w-4" />
-            </Link>
+            </Link> */}
           </div>
 
           <h1 className="text-gray-900 text-3xl font-bold mb-2">
