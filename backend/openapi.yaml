@@ -1,0 +1,1183 @@
+openapi: 3.0.3
+info:
+  title: Todolist API
+  version: 1.2.0 # Incremented version
+  description: |
+    API for managing Todo items, including CRUD operations, subtasks, deadlines, attachments, and user-defined Tags.
+    Supports user authentication via email/password (JWT) and Google OAuth.
+    Designed for use with oapi-codegen and Chi.
+
+    **Note on Notifications:** Real-time notifications (e.g., via SSE or WebSockets) are planned but not fully described in this OpenAPI specification due to limitations in representing asynchronous APIs. These will be documented separately.
+
+    **Note on Tag Deletion:** Deleting a Tag will typically remove its association from any Todo items currently using it.
+servers:
+  # The base path for all API routes defined below.
+  # oapi-codegen will use this when setting up routes with HandlerFromMux.
+  - url: /api/v1
+    description: API version 1
+
+components:
+  # Security Schemes used by the API
+  securitySchemes:
+    BearerAuth: # Used by API clients (non-browser)
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT authentication token provided in the Authorization header.
+    CookieAuth: # Used by the web application (browser)
+      type: apiKey
+      in: cookie
+      name: jwt_token # Name needs to match config.AppConfig.CookieName
+      description: JWT authentication token provided via an HTTP-only cookie.
+
+  # Reusable Schemas
+  schemas:
+    # --- User Schemas ---
+    User:
+      type: object
+      description: Represents a registered user.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        emailVerified:
+          type: boolean
+          readOnly: true
+          description: Indicates if the user's email has been verified (e.g., via OAuth or email confirmation).
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedAt:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+        - id
+        - username
+        - email
+        - emailVerified
+        - createdAt
+        - updatedAt
+
+    SignupRequest:
+      type: object
+      description: Data required for signing up a new user via email/password.
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 50
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 6
+          writeOnly: true # Password should not appear in responses
+      required:
+        - username
+        - email
+        - password
+
+    LoginRequest:
+      type: object
+      description: Data required for logging in via email/password.
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          writeOnly: true
+      required:
+        - email
+        - password
+
+    LoginResponse:
+      type: object
+      description: Response containing the JWT access token for API clients. For browser clients, a cookie is typically set instead.
+      properties:
+        accessToken:
+          type: string
+          description: JWT access token.
+        tokenType:
+          type: string
+          default: "Bearer"
+          description: Type of the token (always Bearer).
+      required:
+        - accessToken
+        - tokenType
+
+    UpdateUserRequest:
+      type: object
+      description: Data for updating user details.
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 50
+        # Add other updatable fields like email if needed (consider verification flow)
+        # Password updates might warrant a separate endpoint /users/me/password
+      # No required fields, allows partial updates
+
+    # --- Tag Schemas ---
+    Tag:
+      type: object
+      description: Represents a user-defined tag for organizing Todos.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        userId:
+          type: string
+          format: uuid
+          readOnly: true
+          description: The ID of the user who owns this Tag.
+        name:
+          type: string
+          description: Name of the tag (e.g., "Work", "Personal"). Must be unique per user.
+        color:
+          type: string
+          format: hexcolor # Custom format hint, e.g., #FF5733
+          nullable: true
+          description: Optional color associated with the tag.
+        icon:
+          type: string
+          nullable: true
+          description: Optional identifier for an icon associated with the tag (e.g., 'briefcase', 'home'). Frontend maps this to actual icon display.
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedAt:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+        - id
+        - userId
+        - name
+        - createdAt
+        - updatedAt
+
+    CreateTagRequest:
+      type: object
+      description: Data required to create a new Tag.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: Name of the tag. Must be unique for the user.
+        color:
+          type: string
+          format: hexcolor
+          nullable: true
+          description: Optional color code (e.g., #FF5733).
+        icon:
+          type: string
+          nullable: true
+          maxLength: 30
+          description: Optional icon identifier.
+      required:
+        - name
+
+    UpdateTagRequest:
+      type: object
+      description: Data for updating an existing Tag. All fields are optional.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: New name for the tag. Must be unique for the user.
+        color:
+          type: string
+          format: hexcolor
+          nullable: true
+          description: New color code.
+        icon:
+          type: string
+          nullable: true
+          maxLength: 30
+          description: New icon identifier.
+
+    # --- Todo Schemas ---
+    Todo:
+      type: object
+      description: Represents a Todo item.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        userId:
+          type: string
+          format: uuid
+          readOnly: true
+          description: The ID of the user who owns this Todo.
+        title:
+          type: string
+          description: The main title or task of the Todo.
+        description:
+          type: string
+          nullable: true
+          description: Optional detailed description of the Todo.
+        status:
+          type: string
+          enum: [pending, in-progress, completed]
+          default: pending
+          description: Current status of the Todo item.
+        deadline:
+          type: string
+          format: date-time
+          nullable: true
+          description: Optional deadline for the Todo item.
+        tagIds:                      # <-- Added
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: List of IDs of Tags associated with this Todo.
+          default: []
+        attachments:
+          type: array
+          items:
+            type: string
+          description: List of identifiers (e.g., URLs or IDs) for attached files/images. Managed via upload/update endpoints.
+          default: []
+        subtasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/Subtask'
+          description: List of subtasks associated with this Todo. Usually fetched/managed via subtask endpoints.
+          readOnly: true # Subtasks typically managed via their own endpoints
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedAt:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+        - id
+        - userId
+        - title
+        - status
+        - tagIds       # <-- Added
+        - attachments
+        - createdAt
+        - updatedAt
+
+    CreateTodoRequest:
+      type: object
+      description: Data required to create a new Todo item.
+      properties:
+        title:
+          type: string
+          minLength: 1
+        description:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [pending, in-progress, completed]
+          default: pending
+        deadline:
+          type: string
+          format: date-time
+          nullable: true
+        tagIds:                      # <-- Added
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Optional list of existing Tag IDs to associate with the new Todo. IDs must belong to the user.
+          default: []
+      required:
+        - title
+
+    UpdateTodoRequest:
+      type: object
+      description: Data for updating an existing Todo item. All fields are optional for partial updates.
+      properties:
+        title:
+          type: string
+          minLength: 1
+        description:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [pending, in-progress, completed]
+        deadline:
+          type: string
+          format: date-time
+          nullable: true
+        tagIds:                      # <-- Added
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Replace the existing list of associated Tag IDs. IDs must belong to the user.
+        attachments: # Allow updating the list of attachments explicitly
+          type: array
+          items:
+            type: string
+          description: Replace the existing list of attachment identifiers. Use upload/delete endpoints for managing actual files.
+
+    # --- Subtask Schemas ---
+    Subtask:
+      type: object
+      description: Represents a subtask associated with a Todo item.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        todoId:
+          type: string
+          format: uuid
+          readOnly: true
+          description: The ID of the parent Todo item.
+        description:
+          type: string
+          description: Description of the subtask.
+        completed:
+          type: boolean
+          default: false
+          description: Whether the subtask is completed.
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedAt:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+        - id
+        - todoId
+        - description
+        - completed
+        - createdAt
+        - updatedAt
+
+    CreateSubtaskRequest:
+      type: object
+      description: Data required to create a new Subtask.
+      properties:
+        description:
+          type: string
+          minLength: 1
+      required:
+        - description
+
+    UpdateSubtaskRequest:
+      type: object
+      description: Data for updating an existing Subtask. Both fields are optional.
+      properties:
+        description:
+          type: string
+          minLength: 1
+        completed:
+          type: boolean
+
+    # --- File Upload Schemas ---
+    FileUploadResponse:
+      type: object
+      description: Response after successfully uploading a file.
+      properties:
+        fileId:
+          type: string
+          description: Unique identifier for the uploaded file.
+        fileName:
+          type: string
+          description: Original name of the uploaded file.
+        fileUrl:
+          type: string
+          format: url
+          description: URL to access the uploaded file.
+        contentType:
+           type: string
+           description: MIME type of the uploaded file.
+        size:
+           type: integer
+           format: int64
+           description: Size of the uploaded file in bytes.
+      required:
+        - fileId
+        - fileName
+        - fileUrl
+        - contentType
+        - size
+
+    # --- Error Schema ---
+    Error:
+      type: object
+      description: Standard error response format.
+      properties:
+        code:
+          type: integer
+          format: int32
+          description: HTTP status code or application-specific code.
+        message:
+          type: string
+          description: Detailed error message.
+      required:
+        - code
+        - message
+
+  # Reusable Responses
+  responses:
+    BadRequest:
+      description: Invalid input (e.g., validation error, missing fields, invalid tag ID).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Authentication failed (e.g., invalid credentials, invalid/expired token/cookie, missing authentication).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+       description: Authorization failed (e.g., user does not have permission to access or modify the resource, such as another user's tag).
+       content:
+         application/json:
+           schema:
+             $ref: "#/components/schemas/Error"
+    NotFound:
+      description: The requested resource (e.g., Todo, Tag, Subtask) was not found.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Conflict:
+      description: Conflict (e.g., username or email already exists, tag name already exists for the user, resource state conflict).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InternalServerError:
+      description: Internal server error.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+# Security Requirement applied globally or per-operation
+# Most endpoints require either Bearer or Cookie auth.
+security:
+  - BearerAuth: []
+  - CookieAuth: []
+
+# API Path Definitions
+paths:
+  # --- Authentication Endpoints ---
+  /auth/signup:
+    post:
+      summary: Register a new user via email/password (API).
+      operationId: signupUserApi
+      tags: [Auth]
+      security: [] # No auth required to sign up
+      requestBody:
+        required: true
+        description: User details for registration.
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignupRequest"
+      responses:
+        "201":
+          description: User created successfully. Returns the new user object.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict" # e.g., Email or Username already exists
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /auth/login:
+    post:
+      summary: Log in a user via email/password (API).
+      description: Authenticates a user and returns a JWT access token in the response body for API clients. For browser clients, this endpoint typically also sets an HTTP-only cookie containing the JWT.
+      operationId: loginUserApi
+      tags: [Auth]
+      security: [] # No auth required to log in
+      requestBody:
+        required: true
+        description: User credentials for login.
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login successful. Returns JWT token for API clients. Sets auth cookie for browsers.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+          headers:
+            Set-Cookie: # Indicate that a cookie might be set for browser clients
+              schema:
+                type: string
+              description: Contains the JWT authentication cookie (e.g., `jwt_token=...; HttpOnly; Secure; Path=/; SameSite=Lax`)
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized" # Invalid credentials
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /auth/logout: # Often useful to have an explicit logout
+    post:
+      summary: Log out the current user.
+      description: Invalidates the current session (e.g., clears the authentication cookie).
+      operationId: logoutUser
+      tags: [Auth]
+      # Requires authentication to know *who* is logging out to clear their session/cookie
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
+      responses:
+        "204":
+          description: Logout successful. No content returned.
+          headers:
+             Set-Cookie: # Indicate that the cookie is being cleared
+               schema:
+                 type: string
+               description: Clears the JWT authentication cookie (e.g., `jwt_token=; HttpOnly; Secure; Path=/; Max-Age=0; SameSite=Lax`)
+        "401":
+          $ref: "#/components/responses/Unauthorized" # If not logged in initially
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /auth/google/login:
+    get:
+      summary: Initiate Google OAuth login flow.
+      description: Redirects the user's browser to Google's authentication page. Not a typical REST endpoint, part of the web flow.
+      operationId: initiateGoogleLogin
+      tags: [Auth]
+      security: [] # No API auth needed to start the flow
+      responses:
+        "302":
+          description: Redirect to Google's OAuth consent screen. The 'Location' header contains the redirect URL.
+          headers:
+            Location:
+              schema:
+                type: string
+                format: url
+              description: URL to Google's OAuth endpoint.
+        "500":
+          description: Server error during redirect URL generation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /auth/google/callback:
+    get:
+      summary: Callback endpoint for Google OAuth flow.
+      description: Google redirects the user here after authentication. The server exchanges the received code for tokens, finds/creates the user, generates a JWT, sets the auth cookie, and redirects the user (e.g., to the web app dashboard).
+      operationId: handleGoogleCallback
+      tags: [Auth]
+      security: [] # No API auth needed, Google provides auth code via query param
+      # parameters:
+      #   - name: code
+      #     in: query
+      #     required: true
+      #     schema:
+      #       type: string
+      #     description: Authorization code provided by Google.
+      #   - name: state
+      #     in: query
+      #     required: false # Recommended for security (CSRF protection)
+      #     schema:
+      #       type: string
+      #     description: Opaque value used to maintain state between the request and callback.
+      responses:
+        "302":
+          description: Authentication successful. Redirects the user to the frontend application (e.g., '/dashboard'). Sets auth cookie.
+          headers:
+            Location:
+              schema:
+                type: string
+              description: Redirect URL within the application after successful login.
+            Set-Cookie:
+              schema:
+                type: string
+              description: Contains the JWT authentication cookie.
+        "401":
+          description: Authentication failed with Google or failed to process callback. Redirects to a login/error page.
+          headers:
+            Location:
+              schema:
+                type: string
+              description: Redirect URL to an error or login page.
+        "500":
+          description: Internal server error during callback processing. Redirects to an error page.
+          headers:
+            Location:
+              schema:
+                type: string
+              description: Redirect URL to an error page.
+
+  # --- User Endpoints ---
+  /users/me:
+    get:
+      summary: Get current authenticated user's details.
+      operationId: getCurrentUser
+      tags: [Users]
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Current user details.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+    patch:
+      summary: Update current authenticated user's details.
+      operationId: updateCurrentUser
+      tags: [Users]
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
+      requestBody:
+        required: true
+        description: User details to update. Only fields provided will be updated.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+      responses:
+        "200":
+          description: User updated successfully. Returns the updated user object.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest" # Validation error
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+           $ref: "#/components/responses/Conflict" # e.g. Username already taken
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  # --- Tag Endpoints ---         <-- New Section
+  /tags:
+    get:
+      summary: List all tags created by the current user.
+      operationId: listUserTags
+      tags: [Tags]
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
+      responses:
+        "200":
+          description: A list of the user's tags.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Tag'
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+    post:
+      summary: Create a new tag.
+      operationId: createTag
+      tags: [Tags]
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
+      requestBody:
+        required: true
+        description: Details of the tag to create.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTagRequest'
+      responses:
+        "201":
+          description: Tag created successfully. Returns the new tag.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tag'
+        "400":
+          $ref: "#/components/responses/BadRequest" # Validation error
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict" # Tag name already exists for this user
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /tags/{tagId}:
+    parameters:
+      - name: tagId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: ID of the Tag.
+    get:
+      summary: Get a specific tag by ID.
+      operationId: getTagById
+      tags: [Tags]
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
+      responses:
+        "200":
+          description: The requested Tag details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tag'
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden" # User does not own this tag
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+    patch:
+      summary: Update a specific tag by ID.
+      operationId: updateTagById
+      tags: [Tags]
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
+      requestBody:
+        required: true
+        description: Fields of the tag to update.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTagRequest'
+      responses:
+        "200":
+          description: Tag updated successfully. Returns the updated tag.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tag'
+        "400":
+          $ref: "#/components/responses/BadRequest" # Validation error
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden" # User does not own this tag
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict" # New tag name already exists for this user
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+    delete:
+      summary: Delete a specific tag by ID.
+      description: Deletes a tag owned by the user. This will typically remove the tag's ID from any Todos currently associated with it.
+      operationId: deleteTagById
+      tags: [Tags]
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
+      responses:
+        "204":
+          description: Tag deleted successfully. No content.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden" # User does not own this tag
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+
+  # --- Todo Endpoints ---
+  /todos:
+    get:
+      summary: List Todo items for the current user.
+      operationId: listTodos
+      tags: [Todos]
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pending, in-progress, completed]
+          description: Filter Todos by status.
+        - name: tagId # <-- Added filter parameter
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Filter Todos by a specific Tag ID.
+        - name: deadline_before
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Filter Todos with deadline before this date/time.
+        - name: deadline_after
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Filter Todos with deadline after this date/time.
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 20
+          description: Maximum number of Todos to return.
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Number of Todos to skip for pagination.
+      responses:
+        "200":
+          description: A list of Todo items matching the criteria.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Todo"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+    post:
+      summary: Create a new Todo item.
+      operationId: createTodo
+      tags: [Todos]
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
+      requestBody:
+        required: true
+        description: Todo item details to create, optionally including Tag IDs.
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTodoRequest" # Now includes tagIds
+      responses:
+        "201":
+          description: Todo item created successfully. Returns the new Todo.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Todo"
+        "400":
+          $ref: "#/components/responses/BadRequest" # e.g., invalid tag ID provided
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /todos/{todoId}:
+    parameters: # Parameter applicable to all methods for this path
+      - name: todoId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: ID of the Todo item.
+    get:
+      summary: Get a specific Todo item by ID.
+      operationId: getTodoById
+      tags: [Todos]
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
+      responses:
+        "200":
+          description: The requested Todo item.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Todo" # Now includes tagIds
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden" # User doesn't own this Todo
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+    patch:
+      summary: Update a specific Todo item by ID.
+      operationId: updateTodoById
+      tags: [Todos]
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
+      requestBody:
+        required: true
+        description: Fields of the Todo item to update, potentially including the list of Tag IDs.
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTodoRequest" # Now includes tagIds
+      responses:
+        "200":
+          description: Todo item updated successfully. Returns the updated Todo.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Todo"
+        "400":
+          $ref: "#/components/responses/BadRequest" # e.g., invalid tag ID provided
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+           $ref: "#/components/responses/Forbidden" # User doesn't own this Todo
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+    delete:
+      summary: Delete a specific Todo item by ID.
+      operationId: deleteTodoById
+      tags: [Todos]
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
+      responses:
+        "204":
+          description: Todo item deleted successfully. No content.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+           $ref: "#/components/responses/Forbidden" # User doesn't own this Todo
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  # --- Attachment Endpoints ---
+  /todos/{todoId}/attachments:
+    parameters:
+      - name: todoId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: ID of the Todo item to attach the file to.
+    post:
+      summary: Upload a file and attach it to a Todo item.
+      operationId: uploadTodoAttachment
+      tags: [Attachments, Todos]
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
+      requestBody:
+        required: true
+        description: The file to upload.
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: # Name of the form field for the file
+                  type: string
+                  format: binary
+              required:
+                - file
+            # You might add examples or encoding details here if needed
+      responses:
+        "201":
+          description: File uploaded and attached successfully. Returns file details. The Todo's `attachments` array is updated server-side.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileUploadResponse'
+        "400":
+          $ref: "#/components/responses/BadRequest" # e.g., No file, size limit exceeded, invalid file type
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+           $ref: "#/components/responses/Forbidden" # User doesn't own this Todo
+        "404":
+          $ref: "#/components/responses/NotFound" # Todo not found
+        "500":
+          $ref: "#/components/responses/InternalServerError" # File storage error, etc.
+
+  # --- Subtask Endpoints ---
+  /todos/{todoId}/subtasks:
+    parameters:
+      - name: todoId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: ID of the parent Todo item.
+    get:
+      summary: List all subtasks for a specific Todo item.
+      operationId: listSubtasksForTodo
+      tags: [Subtasks, Todos]
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
+      responses:
+        "200":
+          description: A list of subtasks for the specified Todo.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Subtask'
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+           $ref: "#/components/responses/Forbidden" # User doesn't own parent Todo
+        "404":
+          $ref: "#/components/responses/NotFound" # Parent Todo not found
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+    post:
+      summary: Create a new subtask for a specific Todo item.
+      operationId: createSubtaskForTodo
+      tags: [Subtasks, Todos]
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
+      requestBody:
+        required: true
+        description: Details of the subtask to create.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSubtaskRequest'
+      responses:
+        "201":
+          description: Subtask created successfully. Returns the new subtask.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subtask'
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+           $ref: "#/components/responses/Forbidden" # User doesn't own parent Todo
+        "404":
+          $ref: "#/components/responses/NotFound" # Parent Todo not found
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /todos/{todoId}/subtasks/{subtaskId}:
+    parameters:
+      - name: todoId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: ID of the parent Todo item.
+      - name: subtaskId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: ID of the Subtask item.
+    patch:
+      summary: Update a specific subtask.
+      operationId: updateSubtaskById
+      tags: [Subtasks, Todos]
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
+      requestBody:
+        required: true
+        description: Fields of the subtask to update.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSubtaskRequest'
+      responses:
+        "200":
+          description: Subtask updated successfully. Returns the updated subtask.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subtask'
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+           $ref: "#/components/responses/Forbidden" # User doesn't own parent Todo
+        "404":
+          $ref: "#/components/responses/NotFound" # Todo or Subtask not found
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+    delete:
+      summary: Delete a specific subtask.
+      operationId: deleteSubtaskById
+      tags: [Subtasks, Todos]
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
+      responses:
+        "204":
+          description: Subtask deleted successfully. No content.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+           $ref: "#/components/responses/Forbidden" # User doesn't own parent Todo
+        "404":
+          $ref: "#/components/responses/NotFound" # Todo or Subtask not found
+        "500":
+          $ref: "#/components/responses/InternalServerError"

@@ -1,0 +1,17 @@
+package: api
+
+generate:
+  chi-server:
+    output: openapi_generated.go
+    strict-server: true
+
+  types:
+    output: openapi_types.go
+
+  models:
+    package: models
+    output: openapi_models_generated.go
+
+  strict-server:
+    package: api
+    output: openapi_strict_server_generated.go

@@ -1,0 +1,49 @@
+# .air.toml
+root = "."
+# Optional! Store the binary in Air's temporary folder, defaults to ./tmp
+tmp_dir = "tmp"
+
+[build]
+# Command to build your Go application. Ensure output path is correct.
+cmd = "go build -o ./bin/todolist-server ./cmd/server/main.go"
+# The final binary executable Air will run. Matches the output of `cmd`.
+bin = "bin/todolist-server"
+# Additional arguments/flags to pass to the 'bin' command on execution
+full_bin = "./bin/todolist-server -config=." # Pass config path
+
+# Directories to watch for changes. Changes trigger a rebuild and restart.
+include_dir = ["cmd", "internal", "migrations", "pkg"] # Add 'pkg' if you use it
+# Files to watch specifically (e.g., config, OpenAPI spec)
+include_file = ["openapi.yaml", "config.yaml", "sqlc.yaml"]
+
+# Directories to exclude from watching. Prevents unnecessary rebuilds.
+exclude_dir = ["bin", "vendor", "tmp", "scripts", "docs"]
+# Files or patterns to exclude.
+exclude_file = []
+# Regex patterns for files/dirs to exclude.
+exclude_regex = ["_test.go", "_generated.go", "mocks"] # Exclude tests, generated code, mocks
+# Files to exclude just from triggering rebuilds (but still watched for other purposes?)
+exclude_unchanged = []
+
+# File extensions to watch.
+include_ext = ["go", "yaml", "sql", "toml"] # Watch Go, YAML, SQL, and TOML files
+
+# Log name prefix for Air's output
+log_name = "air_todolist.log"
+# Follow symlinks when watching?
+follow_symlink = true
+
+# --- Execution ---
+# Delay between detecting a file change and triggering the build (milliseconds).
+# Useful to debounce rapid saves.
+delay = 1000 # 1 second
+
+# --- Logging ---
+# Show log colors.
+log_color = true
+
+# --- Misc ---
+# Send interrupt signal instead of kill when stopping the process.
+send_interrupt = true
+# Kill delay (seconds) after sending interrupt signal before force killing.
+kill_delay = 5 # seconds
