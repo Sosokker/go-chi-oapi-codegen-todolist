@@ -1,4 +1,4 @@
-# Project Report: Full-Stack Todo List Application
+# Full-Stack Todo List Application
 
 ## 1. Overview
 
