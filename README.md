@@ -106,7 +106,7 @@ The app should now run at `http://localhost:3000`.
 * **Frontend:** Creates user interface and manages user interactions
 * **Communication:** Frontend sends HTTP requests to backend API endpoints
 
-### Backend Architecture (Hexagonal):
+### Backend Architecture - Hexagonal (Ports & Adapters):
 
 The backend follows a "ports and adapters" pattern for better separation of concerns:
 
@@ -117,6 +117,46 @@ The backend follows a "ports and adapters" pattern for better separation of conc
    * API handlers (connect HTTP to services)
    * Database repositories (connect services to database)
    * Storage service (connects to Google Cloud)
+
+The goal is to **decouple core business logic** from external systems such as databases, web frameworks, and third-party APIs.
+
+#### Core (Inside the Hexagon)
+
+- Contains essential **business rules and domain logic**
+- Located in:
+  - `internal/domain`: Domain models and error definitions
+  - `internal/service`: Use cases and service logic
+- The core is **technology-agnostic** and has **no knowledge** of infrastructure or frameworks
+
+#### Ports (Hexagon Boundary Interfaces)
+
+Interfaces that define how the core interacts with the outside world.
+
+- **Driving Ports** (Input Interfaces)  
+  - Describe how the application can be used  
+  - Example: `TodoService` interface defines operations like `CreateTodo`, `ListTodos`  
+  - Implemented in the **application layer** (`internal/service`)
+
+- **Driven Ports** (Output Interfaces)  
+  - Describe how the application depends on external systems  
+  - Example: `TodoRepository`, `FileStorageService` interfaces  
+  - Defined in service or repository packages as needed
+
+#### Adapters (Outside the Hexagon)
+
+Concrete implementations that **connect ports to external systems**.
+
+- **Driving Adapters**  
+  - Translate external input (HTTP, CLI, etc.) into calls to the core via driving ports  
+  - Example:  
+    - HTTP handlers in `internal/api` invoke `TodoService` methods  
+    - Middleware handles auth and CORS
+
+- **Driven Adapters**  
+  - Provide infrastructure-specific implementations of driven ports  
+  - Examples:
+    - `pgxTodoRepository` in `internal/repository` implements `TodoRepository` using PostgreSQL
+    - `gcsStorageService` in `internal/service` implements `FileStorageService` using GCS
 
 ### Frontend Architecture:
 
